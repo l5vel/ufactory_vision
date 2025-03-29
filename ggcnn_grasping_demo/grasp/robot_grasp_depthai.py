@@ -326,7 +326,7 @@ class RobotGrasp(object):
         # PBVS Method.
         euler_base_to_eef = self.get_eef_pose_m()
 
-        if d[2] > 0.1:  # Min effective range of the realsense.
+        if d[2] > 0.2:  # Min effective range of the realsense.
             gp = [d[0], d[1], d[2], 0, 0, -1*d[3]] # xyzrpy in meter
 
             # Calculate Pose of Grasp in Robot Base Link Frame
@@ -346,8 +346,6 @@ class RobotGrasp(object):
             av = self.pose_averager.update(np.array([gp_base[0], gp_base[1], gp_base[2], gp_base[5]]))
 
         else:
-            print("Too close", d[2])
-            print(d)
             # gp_base = geometry_msgs.msg.Pose()
             gp_base = [0]*6
             av = self.pose_averager.evaluate()

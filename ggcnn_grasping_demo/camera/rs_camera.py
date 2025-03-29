@@ -62,7 +62,7 @@ if __name__ == '__main__':
 
         cv2.imshow('COLOR', color_image) # 显示彩色图像
         cv2.imshow('DEPTH', depth_image) # 显示深度图像
-        print(depth_image[340][240])
+        # print(depth_image[340][240])
         key = cv2.waitKey(1)    
         # Press esc or 'q' to close the image window
         if key & 0xFF == ord('q') or key == 27:

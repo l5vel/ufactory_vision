@@ -80,7 +80,6 @@ def main():
                 if DISABLE_RGB:
                     cv2.imshow(WIN_NAME, grasp_img) # 显示深度图像
                 else:
-
                     combined_img = np.zeros((color_shape[0], color_shape[1] + grasp_img.shape[1] + 10, 3), np.uint8)
                     combined_img[:color_shape[0], :color_shape[1]] = color_image
                     combined_img[:grasp_img.shape[0], color_shape[1]+10:color_shape[1]+grasp_img.shape[1]+10] = grasp_img

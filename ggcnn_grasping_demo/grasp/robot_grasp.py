@@ -2,7 +2,7 @@ import time
 import math
 import threading
 import numpy as np
-from .helpers.matrix_funcs import euler2mat, convert_pose, rot_to_rpy
+from .helpers.matrix_funcs import euler2mat, convert_pose
 from xarm.wrapper import XArmAPI
 
 
@@ -189,6 +189,7 @@ class RobotGrasp(object):
             self.arm.set_state(0)
             time.sleep(1)
             # going to grasp position but in joint space to avoid IK errors
+            ####################3 change
             self.arm.arm.set_servo_angle(angle=[-33.4, 7.0, -38.7, -0.1, -45.8, -33.3], speed=8, mvacc=1145, wait=True)
             # self.arm.set_position(z=self.detect_xyz[2], speed=200, wait=True)
             # self.arm.set_position(x=self.detect_xyz[0], y=self.detect_xyz[1], z=self.detect_xyz[2], roll=180, pitch=0, yaw=0, speed=200, wait=True)

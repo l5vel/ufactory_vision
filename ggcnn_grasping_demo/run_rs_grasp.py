@@ -6,8 +6,6 @@ from camera.rs_camera import RealSenseCamera
 from grasp.ggcnn_torch import TorchGGCNN
 from grasp.robot_grasp import RobotGrasp
 from queue import Queue
-import math
-import sympy as sp
 
 WIN_NAME = 'RealSense'
 WIDTH = 640
