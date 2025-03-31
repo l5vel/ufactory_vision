@@ -28,7 +28,7 @@ class DepthAiCamera(object):
             camRgb.setPreviewSize(width, height)
             camRgb.setInterleaved(False)
             camRgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.RGB)
-            camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+            camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_800_P)
             camRgb.setFps(fps)
             # Linking
             camRgb.preview.link(xoutRgb.input)
@@ -50,11 +50,13 @@ class DepthAiCamera(object):
         depth.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
         # Options: MEDIAN_OFF, KERNEL_3x3, KERNEL_5x5, KERNEL_7x7 (default)
         depth.initialConfig.setMedianFilter(dai.MedianFilter.KERNEL_7x7)
+        depth.initialConfig.setDisparityShift(30)
         depth.setLeftRightCheck(lr_check)
-        depth.setExtendedDisparity(extended_disparity) 
+        depth.initialConfig.setLeftRightCheckThreshold(15)
+        depth.setExtendedDisparity(True) 
         depth.setSubpixel(subpixel)
         # depth.initialConfig.setDisparityShift(30) #optional: set disparity shift to enhance close observation
-        # depth.initialConfig.setConfidenceThreshold(250)
+        depth.initialConfig.setConfidenceThreshold(150)
         # Linking
         monoLeft.out.link(depth.left)
         monoRight.out.link(depth.right)
@@ -66,6 +68,8 @@ class DepthAiCamera(object):
         self.pipeline = pipeline
         self.depth = depth
         self.device = dai.Device(self.pipeline)
+        # self.device.setIrLaserDotProjectorBrightness(100)
+        # self.device.setIrFloodLightBrightness(100) 
         # Output queue will be used to get the disparity frames from the outputs defined above
         if not self.disable_rgb:
             self.queRgb = self.device.getOutputQueue(name="rgb", maxSize=4, blocking=False)

@@ -6,12 +6,13 @@ from camera.rs_camera import RealSenseCamera
 from grasp.ggcnn_torch import TorchGGCNN
 from grasp.robot_grasp import RobotGrasp
 from queue import Queue
+import math
 
 WIN_NAME = 'RealSense'
 WIDTH = 640
 HEIGHT = 480
 # rgb camera calibration result
-EULER_EEF_TO_COLOR_OPT = [0.06, 0.015, -0.15, 0, 0, 1.5898775] # xyzrpy meters_rad
+EULER_EEF_TO_COLOR_OPT = [0.06, 0.015, -0.15, 0, 0, math.pi/2] # xyzrpy meters_rad
 
 EULER_COLOR_TO_DEPTH_OPT = [0, 0, 0, 0, 0, 0]
 GGCNN_IN_THREAD = False
@@ -21,10 +22,13 @@ GGCNN_IN_THREAD = False
 # GRASPING_RANGE = [180, 600, -200, 200] # [x_min, x_max, y_min, y_max]
 # GRASPING_RANGE = [0, 1000, -500, 600] # [x_min, x_max, y_min, y_max]
 # GRASPING_RANGE = [0, 700, -500, 300] # [x_min, x_max, y_min, y_max]
-GRASPING_RANGE = [0, 700, -1000, 0] # [x_min, x_max, y_min, y_max]
+# GRASPING_RANGE = [0, 700, -1000,0] # [x_min, x_max, y_min, y_max]
+GRASPING_RANGE = [-500, 700, -1000,100] # [x_min, x_max, y_min, y_max]
+
 #  initial detection position
 DETECT_XYZ = [300, -200, 350] # [x, y, z] # reset later in the code based on init pose
-    
+# Use initial position set on robot instead of predefined initial detectino position
+USE_INIT_POS = True 
 
 
 # The distance between the gripping point of the robot grasping and the end of the robot arm flange
@@ -37,6 +41,7 @@ RELEASE_XYZ = [400, 400, 270]
 # min z for grasping
 GRASPING_MIN_Z = 0
 
+# variable to ignore the gripper points as 
 def main():
     if len(sys.argv) < 2:
         print('Usage: {} {{robot_ip}}'.format(sys.argv[0]))
@@ -56,7 +61,7 @@ def main():
     cx = depth_intrin.ppx
     cy = depth_intrin.ppy
     time.sleep(3)
-    grasp = RobotGrasp(robot_ip, ggcnn_cmd_que, EULER_EEF_TO_COLOR_OPT, EULER_COLOR_TO_DEPTH_OPT, GRASPING_RANGE, DETECT_XYZ, GRIPPER_Z_MM, RELEASE_XYZ, GRASPING_MIN_Z)
+    grasp = RobotGrasp(robot_ip, ggcnn_cmd_que, EULER_EEF_TO_COLOR_OPT, EULER_COLOR_TO_DEPTH_OPT, GRASPING_RANGE, DETECT_XYZ, GRIPPER_Z_MM, RELEASE_XYZ, GRASPING_MIN_Z, USE_INIT_POS)
 
     color_image, depth_image = camera.get_images()
     color_shape = color_image.shape

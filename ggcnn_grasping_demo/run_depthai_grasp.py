@@ -4,34 +4,39 @@ import time
 import numpy as np
 from camera.depthai_camera import DepthAiCamera
 from grasp.ggcnn_torch import TorchGGCNN
-from grasp.robot_grasp_depthai import RobotGrasp
+from grasp.robot_grasp import RobotGrasp
 from queue import Queue
+import math
 
 WIN_NAME = 'DEPTHAI'
 WIDTH = 640
 HEIGHT = 400
 # EULER_EEF_TO_COLOR_OPT = [0.075, 0, 0.021611456, 0, 0, 1.5708] # xyzrpy meters_rad
-EULER_EEF_TO_COLOR_OPT = [0.0703, 0.0023, 0.0175, 0, 0, 1.579] # xyzrpy meters_rad
-EULER_COLOR_TO_DEPTH_OPT = [0.0375, 0, 0, 0, 0, 0]
+EULER_EEF_TO_COLOR_OPT = [0.09, 0.01, -0.15, 0, 0, math.pi/2] # xyzrpy meters_rad
+EULER_COLOR_TO_DEPTH_OPT = [0.0375, 0, 0, 0, 0, 0] # alighned with left in camera code
+
 GGCNN_IN_THREAD = False
 DISABLE_RGB = False
 
 # The range of motion of the robot grasping
 # If it exceeds the range, it will return to the initial detection position.
-GRASPING_RANGE = [-1000, 1000, -1000, 1000] # [x_min, x_max, y_min, y_max]
+# GRASPING_RANGE = [-1000, 1000, -1000, 1000] # [x_min, x_max, y_min, y_max]
+GRASPING_RANGE = [0, 700, -800, 300] # [x_min, x_max, y_min, y_max]
 
 # initial detection position
 DETECT_XYZ = [300, -200, 250] # [x, y, z]
+# Use initial position set on robot instead of predefined initial detectino position
+USE_INIT_POS = True 
 
 # The distance between the gripping point of the robot grasping and the end of the robot arm flange
 # The value needs to be fine-tuned according to the actual situation.
-GRIPPER_Z_MM = 150 # mm
+GRIPPER_Z_MM = -40 # mm
 
 # release grasping pos
 RELEASE_XYZ = [400, 400, 270]
 
 # min z for grasping
-GRASPING_MIN_Z = 150
+GRASPING_MIN_Z = 0
 
 def main():
     if len(sys.argv) < 2:
@@ -51,7 +56,7 @@ def main():
     cx = depth_intrin[0][2]
     cy = depth_intrin[1][2]
     time.sleep(3)
-    grasp = RobotGrasp(robot_ip, ggcnn_cmd_que, EULER_EEF_TO_COLOR_OPT, EULER_COLOR_TO_DEPTH_OPT, GRASPING_RANGE, DETECT_XYZ, GRIPPER_Z_MM, RELEASE_XYZ, GRASPING_MIN_Z)
+    grasp = RobotGrasp(robot_ip, ggcnn_cmd_que, EULER_EEF_TO_COLOR_OPT, EULER_COLOR_TO_DEPTH_OPT, GRASPING_RANGE, DETECT_XYZ, GRIPPER_Z_MM, RELEASE_XYZ, GRASPING_MIN_Z, USE_INIT_POS)
 
     color_image, depth_image = camera.get_images()
     if color_image is not None:

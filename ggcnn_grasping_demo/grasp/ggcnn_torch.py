@@ -30,7 +30,7 @@ class TimeIt:
 
 class TorchGGCNN(object):
     def __init__(self, depth_img_que, ggcnn_cmd_que, depth_intrin, width=640, height=480, run_in_thread=False):
-        self.device = torch.device('cpu')
+        self.device = torch.device('cuda')
         self.model = torch.load('models/ggcnn_epoch_23_cornell', map_location=self.device, weights_only=False)
         self.robot_z = 0.5
         self.prev_mp = np.array([150, 150])
@@ -80,14 +80,8 @@ class TorchGGCNN(object):
             # Scale to keep as float, but has to be in bounds -1:1 to keep opencv happy.
             depth_scale = np.abs(depth_crop).max()
             depth_crop = depth_crop.astype(np.float32)/depth_scale  # Has to be float32, 64 not supported.
-<<<<<<< HEAD
         
             depth_crop = cv2.inpaint(depth_crop, mask, 1, cv2.INPAINT_NS)
-=======
-
-            depth_crop = cv2.inpaint(depth_crop, mask, 1, cv2.INPAINT_NS)
-
->>>>>>> 2819541b5f218af4f1af0be1c5fd4bfd84d9bdf3
             # Back to original size and value range.
             depth_crop = depth_crop[1:-1, 1:-1]
             depth_crop = depth_crop * depth_scale
@@ -168,10 +162,6 @@ class TorchGGCNN(object):
             max_pixel = np.round(max_pixel).astype(np.int64)
             # print("max_pixel: original [%d, %d]"%(max_pixel[0], max_pixel[1]))
             point_depth = depth_image[max_pixel[0], max_pixel[1]]
-<<<<<<< HEAD
-=======
-
->>>>>>> 2819541b5f218af4f1af0be1c5fd4bfd84d9bdf3
             # These magic numbers are my camera intrinsic parameters. # in camera coordinate system
             x = (max_pixel[1] - cx)/(fx) * point_depth
             y = (max_pixel[0] - cy)/(fy) * point_depth
