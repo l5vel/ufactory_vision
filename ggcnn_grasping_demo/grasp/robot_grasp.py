@@ -129,28 +129,8 @@ class RobotGrasp(object):
         while self.arm.connected and self.alive:
             cmd = self.ggcnn_cmd_que.get()
             self.grasp(cmd)
+            # print("cmd",cmd)
             time.sleep(0.15)
-
-    # function helper to control when to stop the gripper
-    def determine_approach_direction(self):
-        cur_pos = self.CURR_POS
-        goal_pos = self.GOAL_POS
-        # Calculate displacement vector
-        dx = goal_pos[0] - cur_pos[0]
-        dy = goal_pos[1] - cur_pos[1]
-        dz = goal_pos[2] - cur_pos[2]
-        
-        # Find dominant direction based on largest absolute displacement
-        abs_dx, abs_dy, abs_dz = abs(dx), abs(dy), abs(dz)
-        
-        if abs_dz >= abs_dx and abs_dz >= abs_dy:
-            direction = "top_down" if dz < 0 else "bottom_up"
-        elif abs_dx >= abs_dy:
-            direction = "side_x_negative" if dx < 0 else "side_x_positive"
-        else:
-            direction = "side_y_negative" if dy < 0 else "side_y_positive"
-        
-        return direction
 
     def stop_motion(self):
         if not self.SERVO:
@@ -201,7 +181,6 @@ class RobotGrasp(object):
         time.sleep(0.5)
         _,init_pose = self.arm.get_position(is_radian=True)
         self.init_pose = np.array(init_pose,dtype=np.float64)
-        self.GOAL_POS = self.init_pose # initialize in case no appropriate data is found
         # print(init_pose)
         # init_poseSAd = self.arm.get_inverse_kinematics(init_pose, input_is_radian=True, return_is_radian=False)
         # print("init_poseSAd", init_poseSAd)
@@ -277,44 +256,20 @@ class RobotGrasp(object):
 
         # Stop Conditions for approach in all directions
         # stop if current z is less than threshold
-        if z < self.gripper_z_mm:
+        if z < self.grasping_min_z - self.gripper_z_mm:
             self.stop_motion()
         dist_from_goal =  ((self.CURR_POS[0] - self.GOAL_POS[0])**2 + (self.CURR_POS[1] - self.GOAL_POS[1])**2 + (self.CURR_POS[2] - self.GOAL_POS[2])**2)**0.5
         # print("dist_from_goal", dist_from_goal)
         # x_diff_abs = abs(self.CURR_POS[0] - self.GOAL_POS[0])
         # y_diff_abs = abs(self.CURR_POS[1] - self.GOAL_POS[1])
-        # z_diff_abs = abs(self.CURR_POS[2] - self.GOAL_POS[2])
+        z_diff_abs = abs(self.CURR_POS[2] - self.GOAL_POS[2])
+        if z_diff_abs < 1:
+            self.stop_motion()
         # if x_diff_abs < 1 and y_diff_abs < 1 and z_diff_abs < 1:
         #     self.stop_motion()
-        if dist_from_goal < 1 and not np.array_equal(self.GOAL_POS, self.init_pose): # don't stop if this is the first loop
-            self.stop_motion()
-        # stop 1mm above the grasp point
-        # stop based on the dominant motion direction
-        # approach_direction = self.determine_approach_direction()
-        # print(approach_direction)
-        # # Now you can use approach_direction in your conditional statements
-        # if approach_direction in ["top_down"]:
-        #     if approach_direction == "top_down":
-        #         if z - 1 < self.GOAL_POS[2]:
-        #            self.stop_motion()
+        # if dist_from_goal < 1 and not np.array_equal(self.GOAL_POS, self.init_pose): # don't stop if this is the first loop
+        #     self.stop_motion()
 
-        # elif approach_direction in ["side_x_positive", "side_x_negative"]:
-        #     # Check x threshold with appropriate sign
-        #     if approach_direction == "side_x_negative":
-        #         if x - 1 < self.GOAL_POS[0]:
-        #             self.stop_motion()
-        #     else:  # side_x_positive
-        #         if x + 1 > self.GOAL_POS[0]:
-        #             self.stop_motion()
-
-        # elif approach_direction in ["side_y_positive", "side_y_negative"]:
-        #     # Check y threshold with appropriate sign
-        #     if approach_direction == "side_y_negative":
-        #         if y - 1 < self.GOAL_POS[1]:
-        #             self.stop_motion()
-        #     else:  # side_y_positive
-        #         if y + 1 > self.GOAL_POS[1]:
-        #             self.stop_motion()
     def get_eef_pose_m(self):
         _, eef_pos_mm = self.arm.get_position(is_radian=True)
         eef_pos_m = [eef_pos_mm[0]*0.001, eef_pos_mm[1]*0.001, eef_pos_mm[2]*0.001, eef_pos_mm[3], eef_pos_mm[4], eef_pos_mm[5]]
@@ -328,19 +283,21 @@ class RobotGrasp(object):
 
         # PBVS Method.
         euler_base_to_eef = self.get_eef_pose_m()
+        print(d)
         print([d[0], d[1], d[2], 0, 0, -d[3]])
-        if d[2] > 0.3:  # Min effective range of the realsense.
+        if d[2] > 0.35:  # Min effective range of the oakdpro.
+        # if d[2] > 0.2:  # Min effective range of the realsense.
             gp = [d[0], d[1], d[2], 0, 0, -d[3]] # xyzrpy in meter
-            # print("gp", gp)
+            print("gp", gp)
             # Calculate Pose of Grasp in Robot Base Link Frame
             # Average over a few predicted poses to help combat noise.
             # print("gp", gp)
             mat_depthOpt_in_base = euler2mat(euler_base_to_eef) * euler2mat(self.euler_eef_to_color_opt) * euler2mat(self.euler_color_to_depth_opt)
             # print(euler2mat(self.euler_eef_to_color_opt))
-            # print("mat_depthOpt_in_base", mat_depthOpt_in_base)
+            print(mat_depthOpt_in_base)
             # print("euler frame", rot_to_rpy(mat_depthOpt_in_base[0:3,0:3]))
             gp_base = convert_pose(gp, mat_depthOpt_in_base)
-            # print("gp_base",gp_base)
+            print("gp_base",gp_base)
             if gp_base[5] < -np.pi:
                 gp_base[5] += np.pi
             elif gp_base[5] > 0:
@@ -377,8 +334,8 @@ class RobotGrasp(object):
         # self.arm.set_position(*self.GOAL_POS, speed=30, acc=1000, wait=False)
         if self.GRASP_STATUS == 0:
             self.GOAL_POS = GOAL_POS
-            print("GOAL_POS",GOAL_POS)
-            print("CUR_POS", self.CURR_POS)
+            # print("GOAL_POS",GOAL_POS)
+            # print("CUR_POS", self.CURR_POS)
             # _,GOAL_POS_J = self.arm.get_inverse_kinematics(self.GOAL_POS, return_is_radian=False)
             # GOAL_POS_J = np.round(np.array(GOAL_POS_J[:-1],dtype=np.float64),2)
             # print("GOAL_POS_J", GOAL_POS_J)
@@ -386,16 +343,21 @@ class RobotGrasp(object):
             # self.arm.set_state(0)
             # self.arm.set_servo_angle(angle=GOAL_POS_J, speed=25, mvacc=1000, wait=False) 
             # align the robot before approaching in z
-            ang_bin = (abs(self.GOAL_POS[3] - self.CURR_POS[3]) > 5) and (abs(self.GOAL_POS[4] - self.CURR_POS[4])  > 5) and (abs(self.GOAL_POS[5] - self.CURR_POS[5]) > 5) # deg
-            xy_bin = abs(self.GOAL_POS[0] - self.CURR_POS[0]) > 5 and abs(self.GOAL_POS[1] - self.CURR_POS[1]) > 5 # mm
-            if xy_bin and ang_bin:
-                self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.CURR_POS[2],
-                                    roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
+            if GOAL_POS[0] != self.release_xyz[0]:
+                ang_bin = (abs(self.GOAL_POS[3] - self.CURR_POS[3]) > 5) and (abs(self.GOAL_POS[4] - self.CURR_POS[4])  > 5) and (abs(self.GOAL_POS[5] - self.CURR_POS[5]) > 5) # deg
+                xy_bin = abs(self.GOAL_POS[0] - self.CURR_POS[0]) > 5 and abs(self.GOAL_POS[1] - self.CURR_POS[1]) > 5 # mm
+                if xy_bin and ang_bin:
+                    self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.CURR_POS[2],
+                                        roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
+                                        speed=50, mvacc=2500, wait=False)
+                else:
+                    self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.GOAL_POS[2],
+                                        roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
                                     speed=50, mvacc=2500, wait=False)
             else:
                 self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.GOAL_POS[2],
-                                    roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
-                                    speed=50, mvacc=2500, wait=False)
+                                        roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
+                                        speed=50, mvacc=2500, wait=False)
             # self.pose_averager.reset()
             # self.pose_averager.update(av)
 

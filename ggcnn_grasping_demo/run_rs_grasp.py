@@ -11,19 +11,45 @@ import math
 WIN_NAME = 'RealSense'
 WIDTH = 640
 HEIGHT = 480
+## rgb camera calibration result
+# EULER_EEF_TO_COLOR_OPT = [0.015, 0.06, -0.15, 0, 0, math.pi/2] # xyzrpy meters_rad #old mount
 # rgb camera calibration result
-EULER_EEF_TO_COLOR_OPT = [0.06, 0.015, -0.15, 0, 0, math.pi/2] # xyzrpy meters_rad
+# EULER_EEF_TO_COLOR_OPT = [0.1082, 0.015, -0.125, 0, -math.radians(20), math.pi/2] # xyzrpy meters_rad #new tilted mount
+EULER_EEF_TO_COLOR_OPT = [0.015, -0.1082, -0.118, 0, math.radians(20), math.pi/2] # xyzrpy meters_rad #new tilted mount
 
 EULER_COLOR_TO_DEPTH_OPT = [0, 0, 0, 0, 0, 0]
 GGCNN_IN_THREAD = False
 
 # The range of motion of the robot grasping
 # If it exceeds the range, it will return to the initial detection position.
-# GRASPING_RANGE = [180, 600, -200, 200] # [x_min, x_max, y_min, y_max]
-# GRASPING_RANGE = [0, 1000, -500, 600] # [x_min, x_max, y_min, y_max]
-# GRASPING_RANGE = [0, 700, -500, 300] # [x_min, x_max, y_min, y_max]
-# GRASPING_RANGE = [0, 700, -1000,0] # [x_min, x_max, y_min, y_max]
-GRASPING_RANGE = [-500, 700, -1000,100] # [x_min, x_max, y_min, y_max]
+# ### Table mounted
+# # GRASPING_RANGE = [180, 600, -200, 200] # [x_min, x_max, y_min, y_max]
+# # GRASPING_RANGE = [0, 1000, -500, 600] # [x_min, x_max, y_min, y_max]
+# # GRASPING_RANGE = [0, 700, -500, 300] # [x_min, x_max, y_min, y_max]
+# # GRASPING_RANGE = [0, 700, -1000,0] # [x_min, x_max, y_min, y_max]
+# GRASPING_RANGE = [-500, 700, -1000,100] # [x_min, x_max, y_min, y_max]
+# # The distance between the gripping point of the robot grasping and the end of the robot arm flange
+# # The value needs to be fine-tuned according to the actual situation.
+# GRIPPER_Z_MM = -40 # mm
+
+# # release grasping pos
+# RELEASE_XYZ = [400, 400, 270]
+
+# # min z for grasping
+# GRASPING_MIN_Z = 0
+
+
+### Swerve Drive
+GRASPING_RANGE = [-50, 680, -450, 400] # [x_min, x_max, y_min, y_max]
+# The distance between the gripping point of the robot grasping and the end of the robot arm flange
+# The value needs to be fine-tuned according to the actual situation.
+GRIPPER_Z_MM = -25 # mm - accounting for the shifted camera
+
+# release grasping pos
+RELEASE_XYZ = [400, 350, 400]
+
+# min z for grasping
+GRASPING_MIN_Z = -400
 
 #  initial detection position
 DETECT_XYZ = [300, -200, 350] # [x, y, z] # reset later in the code based on init pose
@@ -31,15 +57,6 @@ DETECT_XYZ = [300, -200, 350] # [x, y, z] # reset later in the code based on ini
 USE_INIT_POS = True 
 
 
-# The distance between the gripping point of the robot grasping and the end of the robot arm flange
-# The value needs to be fine-tuned according to the actual situation.
-GRIPPER_Z_MM = -40 # mm
-
-# release grasping pos
-RELEASE_XYZ = [400, 400, 270]
-
-# min z for grasping
-GRASPING_MIN_Z = 0
 
 # variable to ignore the gripper points as 
 def main():

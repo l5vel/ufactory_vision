@@ -56,7 +56,7 @@ class DepthAiCamera(object):
         depth.setExtendedDisparity(True) 
         depth.setSubpixel(subpixel)
         # depth.initialConfig.setDisparityShift(30) #optional: set disparity shift to enhance close observation
-        depth.initialConfig.setConfidenceThreshold(150)
+        depth.initialConfig.setConfidenceThreshold(200)
         # Linking
         monoLeft.out.link(depth.left)
         monoRight.out.link(depth.right)
