@@ -180,7 +180,7 @@ class RobotGrasp(object):
         self.arm.set_servo_angle(angle=init_pos,wait=True,is_radian=False)
         time.sleep(0.5)
         _,init_pose = self.arm.get_position(is_radian=True)
-        self.init_pose = np.array(init_pose,dtype=np.float64)
+        self.init_pose = np.array(init_pose,dtype=np.float32)
         # print(init_pose)
         # init_poseSAd = self.arm.get_inverse_kinematics(init_pose, input_is_radian=True, return_is_radian=False)
         # print("init_poseSAd", init_poseSAd)
@@ -283,21 +283,21 @@ class RobotGrasp(object):
 
         # PBVS Method.
         euler_base_to_eef = self.get_eef_pose_m()
-        print(d)
-        print([d[0], d[1], d[2], 0, 0, -d[3]])
-        if d[2] > 0.35:  # Min effective range of the oakdpro.
-        # if d[2] > 0.2:  # Min effective range of the realsense.
+        # print(d)
+        # print([d[0], d[1], d[2], 0, 0, -d[3]])
+        # if d[2] > 0.35:  # Min effective range of the oakdpro.
+        if d[2] > 0.2:  # Min effective range of the realsense.
             gp = [d[0], d[1], d[2], 0, 0, -d[3]] # xyzrpy in meter
-            print("gp", gp)
+            # print("gp", gp)
             # Calculate Pose of Grasp in Robot Base Link Frame
             # Average over a few predicted poses to help combat noise.
             # print("gp", gp)
             mat_depthOpt_in_base = euler2mat(euler_base_to_eef) * euler2mat(self.euler_eef_to_color_opt) * euler2mat(self.euler_color_to_depth_opt)
             # print(euler2mat(self.euler_eef_to_color_opt))
-            print(mat_depthOpt_in_base)
+            # print(mat_depthOpt_in_base)
             # print("euler frame", rot_to_rpy(mat_depthOpt_in_base[0:3,0:3]))
             gp_base = convert_pose(gp, mat_depthOpt_in_base)
-            print("gp_base",gp_base)
+            # print("gp_base",gp_base)
             if gp_base[5] < -np.pi:
                 gp_base[5] += np.pi
             elif gp_base[5] > 0:
@@ -337,7 +337,7 @@ class RobotGrasp(object):
             # print("GOAL_POS",GOAL_POS)
             # print("CUR_POS", self.CURR_POS)
             # _,GOAL_POS_J = self.arm.get_inverse_kinematics(self.GOAL_POS, return_is_radian=False)
-            # GOAL_POS_J = np.round(np.array(GOAL_POS_J[:-1],dtype=np.float64),2)
+            # GOAL_POS_J = np.round(np.array(GOAL_POS_J[:-1],dtype=np.float32),2)
             # print("GOAL_POS_J", GOAL_POS_J)
             # self.arm.set_mode(0)
             # self.arm.set_state(0)
@@ -349,15 +349,15 @@ class RobotGrasp(object):
                 if xy_bin and ang_bin:
                     self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.CURR_POS[2],
                                         roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
-                                        speed=50, mvacc=2500, wait=False)
+                                        speed=50, mvacc=1000, wait=False)
                 else:
                     self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.GOAL_POS[2],
                                         roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
-                                    speed=50, mvacc=2500, wait=False)
+                                    speed=50, mvacc=1000, wait=False)
             else:
                 self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.GOAL_POS[2],
                                         roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
-                                        speed=50, mvacc=2500, wait=False)
+                                        speed=50, mvacc=1000, wait=False)
             # self.pose_averager.reset()
             # self.pose_averager.update(av)
 

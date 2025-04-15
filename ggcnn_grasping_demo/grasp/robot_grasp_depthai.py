@@ -220,7 +220,7 @@ class RobotGrasp(object):
         self.arm.set_servo_angle(angle=init_pos,wait=True,is_radian=False)
         time.sleep(0.5)
         _,init_pose = self.arm.get_position(is_radian=True)
-        self.init_pose = np.array(init_pose,dtype=np.float64)
+        self.init_pose = np.array(init_pose,dtype=np.float32)
         # print(init_pose)
         # init_poseSAd = self.arm.get_inverse_kinematics(init_pose, input_is_radian=True, return_is_radian=False)
         # print("init_poseSAd", init_poseSAd)

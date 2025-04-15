@@ -173,7 +173,14 @@ class TorchGGCNN(object):
         with TimeIt('Draw'):
             # Draw grasp markers on the points_out and publish it. (for visualisation)
             grasp_img = np.zeros((300, 300, 3), dtype=np.uint8)
-            grasp_img[:,:,2] = (points_out * 255.0)
+            # direct assignment is giving casting errors
+            # Convert the NumPy array to a PyTorch Tensor
+            points_out_tensor = torch.from_numpy(points_out)
+            # print("Are there NaNs in points_out?", torch.isnan(points_out_tensor).any())
+            # print("Are there Infs in points_out?", torch.isinf(points_out_tensor).any())
+            # print("Min value of points_out (Tensor):", torch.min(points_out_tensor))
+            # print("Max value of points_out (Tensor):", torch.max(points_out_tensor))
+            grasp_img[:,:,2] = (points_out_tensor * 255.0).cpu().numpy().astype(np.uint8)
 
             # grasp_img_plain = grasp_img.copy()
 
