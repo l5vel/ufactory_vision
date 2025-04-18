@@ -6,7 +6,7 @@ from threading import Thread, Event
 # Import the core grasping functionality
 from run_rs_grasp import perform_grasp
 from gemini_bbox import GeminiBbox
-from run_rs_grasp_ontrig import NetworkTablesGraspTrigger
+from run_rs_grasp_ontrig import NtablesTriggerGrasp
 # Setup logging for NetworkTables
 
 ARM_IP = '172.16.0.13'
@@ -37,7 +37,7 @@ class GeminiGGCNNGrasp:
 
     def grasp_nt_init(self):
         # init nt with raspi and grasp with arm and realsense
-        nt_obj = NetworkTablesGraspTrigger(self.raspi_ip,self.arm_ip)
+        nt_obj = NtablesTriggerGrasp(self.raspi_ip,self.arm_ip)
         nt_obj.initialize_networktables()
         nt_obj.start_monitoring()
         return nt_obj
