@@ -93,13 +93,14 @@ class RobotGrasp(object):
     SERVO = True
     GRASP_STATUS = 0
 
-    def __init__(self, robot_ip, ggcnn_cmd_que, euler_eef_to_color_opt, euler_color_to_depth_opt, grasping_range, detect_xyz, gripper_z_mm, release_xyz, grasping_min_z, use_init_pos = False):
+    def __init__(self, robot_ip, ggcnn_cmd_que, euler_eef_to_color_opt, euler_color_to_depth_opt, grasping_range, detect_xyz, gripper_z_mm, release_xyz, grasping_min_z, use_init_pos = False, stop_arm_on_success = False):
         self.arm = XArmAPI(robot_ip, report_type='real')
         self.ggcnn_cmd_que = ggcnn_cmd_que
         self.euler_eef_to_color_opt = euler_eef_to_color_opt
         self.euler_color_to_depth_opt = euler_color_to_depth_opt
         self.grasping_range = grasping_range
         self.use_init_pos = use_init_pos
+        self.stop_arm_on_success = stop_arm_on_success # stop the arm upon successful grasp
         if self.use_init_pos:
             self.detect_xyz = None
         else:
@@ -121,6 +122,7 @@ class RobotGrasp(object):
         self.ggcnn_t.start()
         self.check_t = threading.Thread(target=self.check_loop, daemon=True)
         self.check_t.start()
+
     
     def is_alive(self):
         return self.alive
@@ -148,6 +150,13 @@ class RobotGrasp(object):
         # check if the grasp is empty or not
         self.arm.set_servo_angle(angle=self.init_j_pose, speed=50, mvacc=1000, wait=True) # going to grasp position but in joint space to avoid IK errors
         if not(self.arm.get_gripper_position()[1]) < 0: # only go to recepticle if gripped something
+            if self.stop_arm_on_success: # stop grasp code if enabled
+                # go to stowed
+                self.arm.set_mode(0)
+                self.arm.set_state(0)
+                self.arm.set_servo_angle(angle=[0,90,0,0,0,0], speed=50, wait=True)
+                self.alive = False
+                return 
             self.arm.set_position(x=self.release_xyz[0], y=self.release_xyz[1], roll=180, pitch=0, yaw=0, speed=200, wait=True)
             self.arm.set_position(z=self.release_xyz[2], speed=100, wait=True)
         # time.sleep(3)
@@ -175,17 +184,42 @@ class RobotGrasp(object):
         self.arm.clean_warn()
         self.arm.set_mode(0)
         self.arm.set_state(0)
-        _, init_pos = tuple(self.arm.get_initial_point())
-        self.init_j_pose = init_pos
-        self.arm.set_servo_angle(angle=init_pos,wait=True,is_radian=False)
-        time.sleep(0.5)
-        _,init_pose = self.arm.get_position(is_radian=True)
-        self.init_pose = np.array(init_pose,dtype=np.float32)
-        # print(init_pose)
-        # init_poseSAd = self.arm.get_inverse_kinematics(init_pose, input_is_radian=True, return_is_radian=False)
-        # print("init_poseSAd", init_poseSAd)
-        self.detect_xyz = ([init_pose[0],init_pose[1],init_pose[2]])
-        self.detect_rpy = ([init_pose[3],init_pose[4],init_pose[5]])
+
+        if self.init_pose is None:
+            _, init_pos = tuple(self.arm.get_initial_point())
+            self.init_j_pose = init_pos
+            self.arm.set_servo_angle(angle=init_pos,wait=True,is_radian=False)
+            time.sleep(0.5)
+            _,init_pose = self.arm.get_position(is_radian=True)
+            self.init_pose = np.array(init_pose,dtype=np.float32)
+            # print(init_pose)
+            # init_poseSAd = self.arm.get_inverse_kinematics(init_pose, input_is_radian=True, return_is_radian=False)
+            # print("init_poseSAd", init_poseSAd)
+            self.detect_xyz = ([init_pose[0],init_pose[1],init_pose[2]])
+            self.detect_rpy = ([init_pose[3],init_pose[4],init_pose[5]])
+            # go back to stow position after inital setup/check arm
+            self.arm.set_servo_angle(angle=[0,90,0,0,0,0],wait=True,is_radian=False)
+            time.sleep(0.5)
+        
+        #         # self.arm.set_state(0)
+        # # _, init_pos = tuple(self.arm.get_initial_point())
+        # self.init_j_pose = [0,90,0,0,0,0]
+
+        # # self.arm.set_servo_angle(angle=init_pos,wait=True,is_radian=False)
+        # # time.sleep(0.5)
+        # init_pose = [325.582489, 0.784381, 84.320984,3.132834, -0.603844, 0.014477]
+        # # _,init_pose = self.arm.get_position(is_radian=True)
+        # self.init_pose = np.array(init_pose,dtype=np.float32)
+        # # print(init_pose)
+        # # init_poseSAd = self.arm.get_inverse_kinematics(init_pose, input_is_radian=True, return_is_radian=False)
+        # # print("init_poseSAd", init_poseSAd)
+        # self.detect_xyz = ([init_pose[0],init_pose[1],init_pose[2]])
+        # self.detect_rpy = ([init_pose[3],init_pose[4],init_pose[5]])
+        # # print( self.detect_xyz)
+        
+        # print( self.detect_xyz)
+        # print( self.detect_rpy)
+        
         self.arm.set_gripper_enable(True)
         self.arm.set_gripper_position(850)
         time.sleep(0.5)

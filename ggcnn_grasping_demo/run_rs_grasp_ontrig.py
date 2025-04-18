@@ -41,124 +41,209 @@ GGCNN_IN_THREAD = False
 # # GRASPING_RANGE = [0, 1000, -500, 600] # [x_min, x_max, y_min, y_max]
 # # GRASPING_RANGE = [0, 700, -500, 300] # [x_min, x_max, y_min, y_max]
 # # GRASPING_RANGE = [0, 700, -1000,0] # [x_min, x_max, y_min, y_max]
-# GRASPING_RANGE = [-500, 700, -1000,100] # [x_min, x_max, y_min, y_max]
+GRASPING_RANGE = [-50, 680, -450, 400] # [x_min, x_max, y_min, y_max]
 # # The distance between the gripping point of the robot grasping and the end of the robot arm flange
 # # The value needs to be fine-tuned according to the actual situation.
-# GRIPPER_Z_MM = -40 # mm
+GRIPPER_Z_MM = -25 # mm
 
 # # release grasping pos
-# RELEASE_XYZ = [400, 400, 270]
+RELEASE_XYZ = [400, 400, 270]
 
 # # min z for grasping
-# GRASPING_MIN_Z = 0
+GRASPING_MIN_Z = -400
 
 ### Swerve Drive
-GRASPING_RANGE = [-50, 680, -450, 400] # [x_min, x_max, y_min, y_max]
-# The distance between the gripping point of the robot grasping and the end of the robot arm flange
-# The value needs to be fine-tuned according to the actual situation.
-GRIPPER_Z_MM = -25 # mm - accounting for the shifted camera
+# GRASPING_RANGE = [-50, 680, -450, 400] # [x_min, x_max, y_min, y_max]
+# # The distance between the gripping point of the robot grasping and the end of the robot arm flange
+# # The value needs to be fine-tuned according to the actual situation.
+# GRIPPER_Z_MM = -25 # mm - accounting for the shifted camera
 
-# release grasping pos
-RELEASE_XYZ = [400, 350, 400]
+# # release grasping pos
+# RELEASE_XYZ = [400, 350, 400]
 
-# min z for grasping
-GRASPING_MIN_Z = -400
+# # min z for grasping
+# GRASPING_MIN_Z = -400
 
 #  initial detection position
 DETECT_XYZ = [300, -200, 350] # [x, y, z] # reset later in the code based on init pose
-# Use initial position set on robot instead of predefined initial detectino position
-USE_INIT_POS = True 
+# Use initial position set on robot instead of current pose
+USE_INIT_POS = True
+
+STOP_ON_GRASP = True # tag to enable grasping in a loop and dropoff goal execution
+
+camera = None
+ggcnn = None
+grasp_module = None
+depth_img_que = None
+ggcnn_cmd_que = None
+monitor_thread = None
+stop_event = None
+
+fx = None
+fy = None 
+cx = None 
+cy = None 
 
 def signal_handler(sig, frame):
     print("Shutting down...")
-    # Perform cleanup if needed
-    NetworkTables.shutdown()
-    sys.exit(0)
+    cleanup()
 
 def background_monitor(stop_event):
+    global grasp_module
     # Add connection status check
     while not NetworkTables.isConnected() and not stop_event.is_set():
         print("Waiting for NetworkTables connection...")
         time.sleep(1)
-    
+
     print("Connected to NetworkTables!")
     grasp_status = 0
-    while True:
+    while not stop_event.is_set():
         try:
+            print("Grasp Status: ", grasp_status)
+            if grasp_status == 1: # successful grasp
+                manip_status = 2
+                sd.putNumber("ManStatus", manip_status)
+                time.sleep(1)
             nav_status = sd.getNumber("NavCmplt", -1)
+            dropff_bool = sd.getNumber("DropOffPt", -1) # if dropoff bool is 1, don't execute grasping
+            if dropff_bool == 1:
+                grasp_module.arm.set_gripper_position(850, wait=True)
+                cleanup()
+                break
             print("Navigation Status:", nav_status)
             if nav_status == 0 or nav_status == -1:  # navigation is not complete/NT unreachable
                 manip_status = 0
-            elif nav_status == 1:
+                grasp_status = 0
+            elif nav_status == 1 and dropff_bool != 1:
                 manip_status = 1
             sd.putNumber("ManStatus", manip_status)
-            if manip_status == 1:# wait for the pi to shutdown
-                time.sleep(1) 
-            if manip_status == 1:    
-                grasp() # will be in this function until exited
+            if manip_status == 1:
+                time.sleep(1)
+                perform_grasp() # will be in this function until grasp complete
+                grasp_status = 1
             time.sleep(0.1)  # Add a small delay to avoid excessive CPU usage
         except Exception as e:
             print(f"Exception in monitoring thread: {e}")
             time.sleep(1)  # Continue the loop even after an exception
-def grasp():
-    # while True:
-    #     time.sleep(1)
-    #     print("In grasp code")
 
+def initialize_modules():
+    global camera, depth_img_que, ggcnn_cmd_que, ggcnn, grasp_module, stop_event, monitor_thread
+    global fx, fy, cx, cy  
     depth_img_que = Queue(1)
     ggcnn_cmd_que = Queue(1)
-    try:
-        camera = RealSenseCamera(width=WIDTH, height=HEIGHT)
-        _, depth_intrin = camera.get_intrinsics()
-        ggcnn = TorchGGCNN(depth_img_que, ggcnn_cmd_que, depth_intrin, width=WIDTH, height=HEIGHT, run_in_thread=GGCNN_IN_THREAD)
-        fx = depth_intrin.fx
-        fy = depth_intrin.fy
-        cx = depth_intrin.ppx
-        cy = depth_intrin.ppy
-        time.sleep(3)
-        grasp = RobotGrasp(robot_ip, ggcnn_cmd_que, EULER_EEF_TO_COLOR_OPT, EULER_COLOR_TO_DEPTH_OPT, GRASPING_RANGE, DETECT_XYZ, GRIPPER_Z_MM, RELEASE_XYZ, GRASPING_MIN_Z)
+    camera = RealSenseCamera(width=WIDTH, height=HEIGHT)
+    _, depth_intrin = camera.get_intrinsics()
+    ggcnn = TorchGGCNN(depth_img_que, ggcnn_cmd_que, depth_intrin, width=WIDTH, height=HEIGHT, run_in_thread=GGCNN_IN_THREAD)
+    fx = depth_intrin.fx
+    fy = depth_intrin.fy
+    cx = depth_intrin.ppx
+    cy = depth_intrin.ppy
+    grasp_module = RobotGrasp(robot_ip, ggcnn_cmd_que, EULER_EEF_TO_COLOR_OPT, EULER_COLOR_TO_DEPTH_OPT, GRASPING_RANGE, DETECT_XYZ, GRIPPER_Z_MM, RELEASE_XYZ, GRASPING_MIN_Z, use_init_pos = USE_INIT_POS, stop_arm_on_success=STOP_ON_GRASP)
+    # Create and start the background thread to monitor navigation status
+    # Add stop event for thread coordination
+    stop_event = Event()
+    monitor_thread = Thread(target=background_monitor, args=(stop_event,), daemon=True)
+    monitor_thread.start()
+    time.sleep(3) # Allow camera and GGCNN to initialize
 
+def perform_grasp():
+
+    global camera, depth_img_que, ggcnn_cmd_que, ggcnn, grasp_module
+    print("Starting Grasp")
+    # # go to grasp pos
+    # # self.arm.set_state(0)
+    # _, init_pos = tuple(grasp_module.arm.get_initial_point())
+    # grasp_module.arm.set_servo_angle(angle=init_pos,wait=True,is_radian=False)
+    # time.sleep(0.5)
+    if camera is None or ggcnn is None or grasp_module is None:
+        print("Modules not initialized. Call initialize_modules() first.")
+        return
+
+    color_image, depth_image = camera.get_images()
+    color_shape = color_image.shape
+    print("Grasp module status : ", grasp_module.is_alive())
+    while grasp_module.is_alive():
         color_image, depth_image = camera.get_images()
-        color_shape = color_image.shape
-
-        while grasp.is_alive():
-            color_image, depth_image = camera.get_images()
-            # cv2.imshow(WIN_NAME, color_image) # 显示彩色图像
-            if GGCNN_IN_THREAD:
-                if not depth_img_que.empty():
-                    depth_img_que.get()
-                depth_img_que.put([depth_image, grasp.CURR_POS[2] / 1000.0])
-                cv2.imshow(WIN_NAME, color_image) # 显示彩色图像
+        if GGCNN_IN_THREAD:
+            if not depth_img_que.empty():
+                depth_img_que.get()
+            depth_img_que.put([depth_image, grasp_module.CURR_POS[2] / 1000.0])
+            cv2.imshow(WIN_NAME, color_image) # Display color image
+        else:
+            data = ggcnn.get_grasp_img(depth_image, cx, cy, fx, fy, grasp_module.CURR_POS[2] / 1000.0)
+            if data:
+                if not ggcnn_cmd_que.empty():
+                    ggcnn_cmd_que.get()
+                ggcnn_cmd_que.put(data[0])
+                grasp_img = data[1]
+                combined_img = np.zeros((color_shape[0], color_shape[1] + grasp_img.shape[1] + 10, 3), np.uint8)
+                combined_img[:color_shape[0], :color_shape[1]] = color_image
+                combined_img[:grasp_img.shape[0], color_shape[1]+10:color_shape[1]+grasp_img.shape[1]+10] = grasp_img
+                cv2.imshow(WIN_NAME, combined_img) # Display combined image
             else:
-                data = ggcnn.get_grasp_img(depth_image, cx, cy, fx, fy, grasp.CURR_POS[2] / 1000.0)
-                if data:
-                    if not ggcnn_cmd_que.empty():
-                        ggcnn_cmd_que.get()
-                    ggcnn_cmd_que.put(data[0])
-                    grasp_img = data[1]
-                    combined_img = np.zeros((color_shape[0], color_shape[1] + grasp_img.shape[1] + 10, 3), np.uint8)
-                    combined_img[:color_shape[0], :color_shape[1]] = color_image
-                    combined_img[:grasp_img.shape[0], color_shape[1]+10:color_shape[1]+grasp_img.shape[1]+10] = grasp_img
+                cv2.imshow(WIN_NAME, color_image) # Display color image
 
-                    cv2.imshow(WIN_NAME, combined_img) # 显示彩色图像
-                else:
-                    cv2.imshow(WIN_NAME, color_image) # 显示彩色图像
-            
-            key = cv2.waitKey(1)
-            # Press esc or 'q' to close the image window
-            if key & 0xFF == ord('q') or key == 27:
-                camera.stop()
-                break
-    finally:
-        # Ensure camera stops properly before exiting the function
-        if 'camera' in locals():
-            camera.stop()
-            # Add a small delay to allow threads to clean up
-            time.sleep(0.2)
+        key = cv2.waitKey(1)
+        # Press esc or 'q' to close the image window
+        if key & 0xFF == ord('q') or key == 27:
+            break
+
+def cleanup():
+    global camera, ggcnn, grasp_module, depth_img_que, ggcnn_cmd_que, stop_event, monitor_thread
+    print("Performing cleanup...")
+
+    # Stop the monitoring thread
+    if stop_event is not None and monitor_thread is not None:
+        print("Stopping monitoring thread...")
+        stop_event.set()  # Signal the thread to stop
+        if monitor_thread.is_alive():
+            monitor_thread.join(timeout=2)  # Wait for thread to exit with timeout
+            if monitor_thread.is_alive():
+                print("Warning: Monitor thread did not exit cleanly")
+            else:
+                print("Monitor thread stopped successfully")
+        monitor_thread = None
+        stop_event = None
+
+    # Stop camera if it exists
+    if camera is not None:
+        camera.stop()
+        camera = None
+
+    # Shutdown GGCNN thread if running
+    if ggcnn is not None:
+        if hasattr(ggcnn, 'stop') and GGCNN_IN_THREAD:
+            ggcnn.stop()
+        ggcnn = None
+
+    # Clear queues if they exist
+    if depth_img_que is not None:
+        while not depth_img_que.empty():
+            depth_img_que.get()
+        depth_img_que = None
+
+    if ggcnn_cmd_que is not None:
+        while not ggcnn_cmd_que.empty():
+            ggcnn_cmd_que.get()
+        ggcnn_cmd_que = None
+
+    # Stop robot grasp operations if running
+    if grasp_module is not None and hasattr(grasp_module, 'stop'):
+        grasp_module.stop()
+        grasp_module = None
+
+    # Close opencv windows
+    cv2.destroyAllWindows()
+
+    # Shutdown network tables
+    NetworkTables.shutdown()
+
+    print("Cleanup complete.")
+    sys.exit(0)
 
 def main():
     signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)    
+    signal.signal(signal.SIGTERM, signal_handler)
     global robot_ip
 
     if len(sys.argv) < 2:
@@ -167,20 +252,16 @@ def main():
 
     robot_ip = sys.argv[1]
 
-    # Create and start the background thread to monitor navigation status
-    # Add stop event for thread coordination
-    stop_event = Event()
-    monitor_thread = Thread(target=background_monitor, args=(stop_event,), daemon=True)
-    monitor_thread.start()
-    
+    initialize_modules()
+
     # Keep the main thread alive
     try:
-        while not stop_event.is_set():
+        while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("Exiting program")
-        stop_event.set()
-        monitor_thread.join(timeout=2)  # Wait for thread to exit
+        print("Exiting program due to keyboard interrupt")
+    finally:
+        cleanup()
 
 if __name__ == '__main__':
     main()
