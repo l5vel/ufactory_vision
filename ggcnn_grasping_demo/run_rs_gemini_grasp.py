@@ -23,15 +23,15 @@ HEIGHT = 480
 GGCNN_IN_THREAD = False
 
 # Camera calibration result
-EULER_EEF_TO_COLOR_OPT = [0.015, -0.1082, -0.118, 0, math.radians(20), math.pi/2]  # xyzrpy meters_rad - tilted mount
+EULER_EEF_TO_COLOR_OPT = [0.015, -0.1082, -0.118, 0, math.radians(20), math.pi/2]  # xyzrpy meters_rad - new tilted mount
 EULER_COLOR_TO_DEPTH_OPT = [0, 0, 0, 0, 0, 0]
 
-# Robot arm parameters
+# SARM parameters
 GRASPING_RANGE = [-50, 680, -450, 400]  # [x_min, x_max, y_min, y_max]
 GRIPPER_Z_MM = -25  # mm - accounting for the shifted camera
-RELEASE_XYZ = [400, 350, 400]
+RELEASE_XYZ = [400, 300, 100]
 GRASPING_MIN_Z = -400
-DETECT_XYZ = [300, -200, 350]  # [x, y, z] # reset later based on init pose
+DETECT_XYZ = [300, -200, 350]  # [x, y, z] # reset later in the code based on init pose
 USE_INIT_POS = True
 ARM_IP = '172.16.0.13'
 
@@ -77,6 +77,9 @@ class GeminiGGCNNGrasp:
             self.cx = self.depth_intrin.ppx
             self.cy = self.depth_intrin.ppy
             
+            # Wait for initialization
+            time.sleep(3)
+            
             # Initialize GGCNN model
             print("Initializing GGCNN model...")
             self.ggcnn = TorchGGCNN(
@@ -114,16 +117,6 @@ class GeminiGGCNNGrasp:
             print(f"Initialization error: {e}")
             self.cleanup()
             return False
-    
-    def numpy_to_pil(self,img_np):
-        """Converts a NumPy array to a PIL Image."""
-        if img_np.ndim == 2:  # Handle grayscale images
-            img_pil = Image.fromarray(img_np, 'L')
-        elif img_np.ndim == 3:  # Handle color images
-            img_pil = Image.fromarray(img_np, 'RGB') # Or 'BGR' depending on OpenCV's default
-        else:
-            raise ValueError(f"Unsupported image ndim: {img_np.ndim}")
-        return img_pil
 
     def detect_object_gemini(self, color_image, target_object="ball"):
         """
@@ -148,54 +141,71 @@ class GeminiGGCNNGrasp:
         (Note: (x_min, y_min) is the top-left corner and (x_max, y_max) is the bottom-right corner of the bounding box.)
         If no '{target_object}' is detected in the image, clearly output "No {target_object} found."
         """
-        img_pil = self.numpy_to_pil(color_image)
+        img_pil = self.gemini_detector.numpy_to_pil(color_image)
         return self.gemini_detector.run_gemini_detect(img_pil, highc_detection_prompt, visualize=False)
 
-    def isolate_object(self, depth_image, bbox, shape=(300, 300)):
+    def isolate_object(self, depth_image, bbox, shape=(300, 300), visualize=False):
         # Extract depth ROI for the detected object
         x_min, y_min, x_max, y_max = bbox
-        # print(f"Bounding box: {bbox}")
+        
         # First ensure the bounding box coordinates are valid
         x_min, y_min = max(0, x_min), max(0, y_min)
         x_max, y_max = min(depth_image.shape[1], x_max), min(depth_image.shape[0], y_max)
-
-        # use bbox to crop the depth image and pad it to 640x480
+        
+        # Extract the ROI from depth image
         roi_depth = depth_image[y_min:y_max, x_min:x_max]
+        
+        # Calculate dimensions
+        roi_height, roi_width = roi_depth.shape
+        
         # Handle NaN values in the depth image
         depth_nan = np.isnan(roi_depth)
-        # max excluding NaN values
         roi_depth[depth_nan] = 0
-        max_depth = roi_depth.max()*5
-        # replace NaN values with max_dept
-        # roi_depth[depth_nan] = max_depth
+        
+        # Set max depth for background
+        max_depth = roi_depth.max() * 5 if roi_depth.max() > 0 else 10000
         roi_depth[depth_nan] = max_depth
         
-        # make everything else in the 640x480 image - max_depth
+        # Create output depth image with specified shape
         padded_depth = np.full(shape, max_depth)
-        padded_depth[y_min:y_min+roi_depth.shape[0], x_min:x_min+roi_depth.shape[1]] = roi_depth
         
-        # Create a combined visualization
-        # 1. Convert depth image to visualization (normalized to 0-255)
-        depth_viz = np.copy(depth_image)
+        # Calculate center position for the ROI in the padded image
+        pad_height, pad_width = shape
+        start_y = max(0, (pad_height - roi_height) // 2)
+        start_x = max(0, (pad_width - roi_width) // 2)
+        
+        # Place ROI in the center of padded image
+        end_y = min(pad_height, start_y + roi_height)
+        end_x = min(pad_width, start_x + roi_width)
+        roi_y_end = min(roi_height, end_y - start_y)
+        roi_x_end = min(roi_width, end_x - start_x)
+        
+        padded_depth[start_y:start_y+roi_y_end, start_x:start_x+roi_x_end] = roi_depth[:roi_y_end, :roi_x_end]
+        
+        # Create visualization for debugging
+        if visualize:
+            # Normalize depth image for visualization (0-255)
+            depth_viz = np.copy(depth_image)
+            depth_viz = np.nan_to_num(depth_viz, nan=0)
+            depth_viz = (depth_viz / (depth_viz.max() or 1) * 255).astype(np.uint8)
+            
+            # Create mask for ROI area in original image
+            mask = np.zeros_like(depth_image, dtype=np.uint8)
+            mask[y_min:y_max, x_min:x_max] = 1
+            
+            # Draw rectangle on original visualization
+            viz_with_rect = depth_viz.copy()
+            cv2.rectangle(viz_with_rect, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+            
+            # Show visualizations
+            # cv2.imshow("Original with ROI", viz_with_rect)
+            
+            # Also visualize the padded output
+            padded_viz = (padded_depth / (padded_depth.max() or 1) * 255).astype(np.uint8) 
+            cv2.imshow("Isolated Object", padded_viz)
+            cv2.waitKey(1)
+            # time.sleep(3)
 
-
-        # 3. Make the ROI stand out
-        roi_viz = np.copy(padded_depth)
-        roi_viz = (roi_viz / np.max(roi_viz) * 255).astype(np.uint8)
-        
-        # Create mask for ROI area
-        mask = np.zeros_like(depth_image, dtype=np.uint8)
-        mask[y_min:y_min+roi_depth.shape[0], x_min:x_min+roi_depth.shape[1]] = 1
-         
-        # 4. Combine images
-        combined_viz = np.where((mask > 0) & (roi_viz < max_depth), roi_viz, depth_viz)
-        
-        # 5. Add rectangle around ROI on combined visualization
-        cv2.rectangle(combined_viz, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-        
-
-        cv2.imshow("depth_image", combined_viz)
-        cv2.waitKey(1)
         return padded_depth
 
     def get_grasp_on_object(self, color_image, depth_image, robot_z, target_object="object"):
@@ -215,7 +225,11 @@ class GeminiGGCNNGrasp:
             return [None, None], False
             
         try:
-            # Detect object
+            # Detect object if the arm is ready to grasp
+            if self.robot_grasp.init_pose is None:
+                print("Robot arm initial pose not setup, skipping detect object")
+                return [None, None], False
+            
             detection = self.detect_object_gemini(color_image, target_object)
             if not detection:
                 print(f"No {target_object} detected")
@@ -227,7 +241,7 @@ class GeminiGGCNNGrasp:
             roi_depth = self.isolate_object(depth_image, bbox, depth_image.shape) 
             # Process the depth image directly to get grasp data
             grasp_data, grasp_img = self.ggcnn.get_grasp_img(
-                roi_depth, 
+                depth_image, 
                 self.cx, 
                 self.cy, 
                 self.fx, 
@@ -277,6 +291,11 @@ class GeminiGGCNNGrasp:
         try:
             # Main processing loop
             while self.running:
+                if not self.robot_grasp.alive: # shutdown if robot is not alive
+                   print("Robot arm not alive, shutting down...")
+                   self.running = False
+                   self.cleanup()
+                   break
                 # Get images from camera
                 color_image, depth_image = self.camera.get_images()
                 color_shape = color_image.shape
@@ -299,7 +318,6 @@ class GeminiGGCNNGrasp:
                     else:
                         print("No target_object input received")
                         break
-                    
                     if grasp_bool:
                         grasp_data, grasp_img = results
                         

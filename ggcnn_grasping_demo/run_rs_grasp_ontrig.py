@@ -13,33 +13,33 @@ from camera.rs_camera import RealSenseCamera
 from grasp.ggcnn_torch import TorchGGCNN
 from grasp.robot_grasp import RobotGrasp
 
+# Class constants
+WIN_NAME = 'RealSense'
+WIDTH = 640
+HEIGHT = 480
+
+# RGB camera calibration result
+EULER_EEF_TO_COLOR_OPT = [0.015, -0.1082, -0.118, 0, math.radians(20), math.pi/2]  # xyzrpy meters_rad #new tilted mount
+EULER_COLOR_TO_DEPTH_OPT = [0, 0, 0, 0, 0, 0]
+
+# The range of motion of the robot grasping
+GRASPING_RANGE = [-50, 680, -450, 400]  # [x_min, x_max, y_min, y_max]
+
+# The distance between the gripping point and the end of the robot arm flange
+GRIPPER_Z_MM = -25  # mm
+
+# Release grasping position
+RELEASE_XYZ = [400, 400, 270]
+
+# Min z for grasping
+GRASPING_MIN_Z = -400
+
+# Initial detection position
+DETECT_XYZ = [300, -200, 350]  # [x, y, z] # reset later in the code based on init pose
+
 
 class NtablesTriggerGrasp:
     """Class to handle robot grasping triggered by NetworkTables events."""
-    
-    # Class constants
-    WIN_NAME = 'RealSense'
-    WIDTH = 640
-    HEIGHT = 480
-    
-    # RGB camera calibration result
-    EULER_EEF_TO_COLOR_OPT = [0.015, -0.1082, -0.118, 0, math.radians(20), math.pi/2]  # xyzrpy meters_rad #new tilted mount
-    EULER_COLOR_TO_DEPTH_OPT = [0, 0, 0, 0, 0, 0]
-    
-    # The range of motion of the robot grasping
-    GRASPING_RANGE = [-50, 680, -450, 400]  # [x_min, x_max, y_min, y_max]
-    
-    # The distance between the gripping point and the end of the robot arm flange
-    GRIPPER_Z_MM = -25  # mm
-    
-    # Release grasping position
-    RELEASE_XYZ = [400, 400, 270]
-    
-    # Min z for grasping
-    GRASPING_MIN_Z = -400
-    
-    # Initial detection position
-    DETECT_XYZ = [300, -200, 350]  # [x, y, z] # reset later in the code based on init pose
     
     def __init__(self, robot_ip, raspi_ip=None, use_init_pos=True, stop_on_grasp=True, 
                  ggcnn_in_thread=False):
@@ -132,6 +132,7 @@ class NtablesTriggerGrasp:
             self.GRASPING_MIN_Z, 
             use_init_pos=self.use_init_pos, 
             stop_arm_on_success=self.stop_on_grasp
+            on_trigger_mode=True
         )
         
         # Create and start the background thread to monitor navigation status

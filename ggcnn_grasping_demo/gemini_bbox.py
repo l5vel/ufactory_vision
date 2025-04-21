@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageDraw
 
+# Import camera module
+from camera.rs_camera import RealSenseCamera
+import time
+
 class GeminiBbox:
     def __init__(self, model_name='gemini-2.0-flash'):
         """
@@ -85,11 +89,20 @@ class GeminiBbox:
             print(f"Error during Gemini API call: {e}")
             return None
     
+    def numpy_to_pil(self,img_np):
+        """Converts a NumPy array to a PIL Image."""
+        if img_np.ndim == 2:  # Handle grayscale images
+            img_pil = Image.fromarray(img_np, 'L')
+        elif img_np.ndim == 3:  # Handle color images
+            img_pil = Image.fromarray(img_np, 'RGB') # Or 'BGR' depending on OpenCV's default
+        else:
+            raise ValueError(f"Unsupported image ndim: {img_np.ndim}")
+        return img_pil
     
     def run_gemini_detect(self, image_pil, query, visualize=False):
         try:
             detections = self.detect_objects(image_pil, query)
-
+            # print(f"Detections: {detections}")
             if detections and visualize:
                 if isinstance(image_pil, Image.Image):
                     # print(f"Image format: PIL (mode: {image_pil.mode})")
@@ -106,14 +119,14 @@ class GeminiBbox:
 
                     for detection in detections:
                         bbox = detection['bounding_box']
-                        # Normalize the bounding box coordinates.
+                        # # Normalize the bounding box coordinates.
                         width, height = image_rgb.size
-                        ymin, xmin, ymax, xmax = bbox
-                        x_min = int(xmin / 1000 * width)
-                        y_min = int(ymin / 1000 * height)
-                        x_max = int(xmax / 1000 * width)
-                        y_max = int(ymax / 1000 * height)
-
+                        # xmin, ymin, xmax, ymax = bbox
+                        # x_min = int(xmin / 1000 * width)
+                        # y_min = int(ymin / 1000 * height)
+                        # x_max = int(xmax / 1000 * width)
+                        # y_max = int(ymax / 1000 * height)
+                        x_min, y_min, x_max, y_max = bbox
                         # print(f"Detection coordinates: (x_min: {x_min}, y_min: {y_min}, x_max: {x_max}, y_max: {y_max})")
                         
                         # Draw rectangle
@@ -128,19 +141,8 @@ class GeminiBbox:
 
                     # Convert the RGB PIL image to a NumPy array for Matplotlib
                     visualization_image_np = np.array(visualization_image_pil)
-                    # print(f"Image shape (NumPy for Matplotlib): {visualization_image_np.shape}")
-
-                    # update the existing axes
-                    self.ax.clear()
-                    self.ax.imshow(visualization_image_np)
-                    self.ax.set_title("Detected Objects")
-                    self.ax.axis('off')
-
-                    # redraw without blocking
-                    self.fig.canvas.draw()
-                    self.fig.canvas.flush_events()
-                    # tiny pause to allow GUI event loop to process
-                    plt.pause(0.001)
+                    cv2.imshow("Detected Objects", visualization_image_np)
+                    cv2.waitKey(1)
 
                 else:
                     print("Warning: Input 'image_pil' is not a PIL Image object.")
@@ -159,33 +161,36 @@ class GeminiBbox:
 # Example usage (replace with your actual project ID and image path):
 if __name__ == "__main__":
     gemini_vision = GeminiBbox()
-
+    camera = RealSenseCamera(width=640, height=480)
     # Example image path (replace with a real image file)
     image_path = "/home/l5vel/NBMOD/a_bunch_of_bananas/img/000006r.png"
-    try:
-        img = Image.open(image_path)
-        
-        object_to_find = "banana"
+    while True:
+        try:
+            # img = Image.open(image_path)
+            img_tmp,_ = camera.get_images()
+            img = gemini_vision.numpy_to_pil(img_tmp)
+            object_to_find = "bottle"
 
-        detection_prompt = f"""
-        Analyze the image and identify all instances of '{object_to_find}'.
-        For each '{object_to_find}' found, output its bounding box coordinates in the format:
-        {object_to_find} : (x_min, y_min, x_max, y_max)
-        Here, (x_min, y_min) represents the top-left corner of the bounding box, and (x_max, y_max) represents the bottom-right corner.
-        If multiple '{object_to_find}' are detected, list each one on a separate line in this exact format, without any additional text or bullet points.
-        """
-        highc_detection_prompt = f"""
-        Analyze the image and identify any instances of '{object_to_find}'.
-        From these, determine which '{object_to_find}' instance you are most confident about (the clearest, most certain detection).
-        Output **only** the bounding box coordinates of that single most confident '{object_to_find}' in the format:
-        {object_to_find} : (x_min, y_min, x_max, y_max)
-        (Note: (x_min, y_min) is the top-left corner and (x_max, y_max) is the bottom-right corner of the bounding box.)
-        If no '{object_to_find}' is detected in the image, clearly output "No {object_to_find} found."
-        """
-        
-        gemini_vision.run_gemini_detect(img, highc_detection_prompt)
+            detection_prompt = f"""
+            Analyze the image and identify all instances of '{object_to_find}'.
+            For each '{object_to_find}' found, output its bounding box coordinates in the format:
+            {object_to_find} : (x_min, y_min, x_max, y_max)
+            Here, (x_min, y_min) represents the top-left corner of the bounding box, and (x_max, y_max) represents the bottom-right corner.
+            If multiple '{object_to_find}' are detected, list each one on a separate line in this exact format, without any additional text or bullet points.
+            """
+            highc_detection_prompt = f"""
+            Analyze the image and identify any instances of '{object_to_find}'.
+            From these, determine which '{object_to_find}' instance you are most confident about (the clearest, most certain detection).
+            Output **only** the bounding box coordinates of that single most confident '{object_to_find}' in the format:
+            {object_to_find} : (x_min, y_min, x_max, y_max)
+            (Note: (x_min, y_min) is the top-left corner and (x_max, y_max) is the bottom-right corner of the bounding box.)
+            If no '{object_to_find}' is detected in the image, clearly output "No {object_to_find} found."
+            """
+            
+            gemini_vision.run_gemini_detect(img, highc_detection_prompt, visualize=True)
+            time.sleep(2)
 
-    except FileNotFoundError:
-        print(f"Error: Image file not found at {image_path}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        except FileNotFoundError:
+            print(f"Error: Image file not found at {image_path}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")

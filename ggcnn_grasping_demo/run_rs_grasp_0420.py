@@ -27,7 +27,6 @@ GRASPING_MIN_Z = -400
 DETECT_XYZ = [300, -200, 350]  # [x, y, z] # reset later in the code based on init pose
 USE_INIT_POS = True
 
-# grasp_pose_list = []
 def perform_grasp(arm_ip):
     """Main grasping function that operates the camera and arm"""
     depth_img_que = Queue(1)
@@ -60,37 +59,18 @@ def perform_grasp(arm_ip):
         # Main grasping loop
         while grasp.is_alive():
             color_image, depth_image = camera.get_images()
-            # get the current eef position
-            cur_eef_pos = []
-            cur_eef_pos = grasp.get_eef_pose_m()
-            print("cur_eef_pos: ", cur_eef_pos)
-            cur_z = grasp.CURR_POS[2] / 1000.0
             
-            # data = ggcnn.get_grasp_img(depth_image, cx, cy, fx, fy, cur_z)
-            # pre_grasp = data[0]
-            # print("pre_grasp: ", pre_grasp)
             if GGCNN_IN_THREAD:
                 if not depth_img_que.empty():
                     depth_img_que.get()
                 depth_img_que.put([depth_image, grasp.CURR_POS[2] / 1000.0])
                 cv2.imshow(WIN_NAME, color_image)
             else:
-                data = ggcnn.get_grasp_img(depth_image, cx, cy, fx, fy, cur_z)
-                # post_grasp = data[0]
-                # print("post and pre sleep grasp didn't changed: ", post_grasp == pre_grasp)
-                time.sleep(6)
+                data = ggcnn.get_grasp_img(depth_image, cx, cy, fx, fy, grasp.CURR_POS[2] / 1000.0)
                 if data:
-                    cur_data = []
                     if not ggcnn_cmd_que.empty():
                         ggcnn_cmd_que.get()
-                    cur_data = data[0]
-                    cur_data.append(cur_eef_pos)
-                    # print("cur_data: ",cur_data)
-                    # print("data: ", cur_data[6])
-                    # print("length of cur_data: ", len(cur_data))
-                    ggcnn_cmd_que.put(cur_data)
-                    # grasp_pose_list.append(data[0])
-                    # time.sleep(60)
+                    ggcnn_cmd_que.put(data[0])
                     grasp_img = data[1]
                     combined_img = np.zeros((color_shape[0], color_shape[1] + grasp_img.shape[1] + 10, 3), np.uint8)
                     combined_img[:color_shape[0], :color_shape[1]] = color_image
@@ -113,7 +93,6 @@ def perform_grasp(arm_ip):
         
     finally:
         # Ensure camera stops properly before exiting the function
-        # print(grasp_pose_list)
         if camera:
             camera.stop()
             # Add a small delay to allow threads to clean up

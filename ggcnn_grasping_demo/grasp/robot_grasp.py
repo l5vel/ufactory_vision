@@ -93,7 +93,7 @@ class RobotGrasp(object):
     SERVO = True
     GRASP_STATUS = 0
 
-    def __init__(self, robot_ip, ggcnn_cmd_que, euler_eef_to_color_opt, euler_color_to_depth_opt, grasping_range, detect_xyz, gripper_z_mm, release_xyz, grasping_min_z, use_init_pos = False, stop_arm_on_success = False):
+    def __init__(self, robot_ip, ggcnn_cmd_que, euler_eef_to_color_opt, euler_color_to_depth_opt, grasping_range, detect_xyz, gripper_z_mm, release_xyz, grasping_min_z, use_init_pos = False, stop_arm_on_success = False, on_trigger_mode = False):
         self.arm = XArmAPI(robot_ip, report_type='real')
         self.ggcnn_cmd_que = ggcnn_cmd_que
         self.euler_eef_to_color_opt = euler_eef_to_color_opt
@@ -101,6 +101,7 @@ class RobotGrasp(object):
         self.grasping_range = grasping_range
         self.use_init_pos = use_init_pos
         self.stop_arm_on_success = stop_arm_on_success # stop the arm upon successful grasp
+        self.on_trigger_mode = on_trigger_mode # stow the arm if this is set to true
         if self.use_init_pos:
             self.detect_xyz = None
         else:
@@ -178,51 +179,36 @@ class RobotGrasp(object):
         self.SERVO = True
         self.last_grasp_time = time.monotonic()
     
-    def update_pos_loop(self):
-        self.arm.motion_enable(True)
+    def xarm_init(self):
         self.arm.clean_error()
         self.arm.clean_warn()
+        self.arm.motion_enable(True)
         self.arm.set_mode(0)
         self.arm.set_state(0)
-
-        if self.init_pose is None:
-            _, init_pos = tuple(self.arm.get_initial_point())
-            self.init_j_pose = init_pos
-            self.arm.set_servo_angle(angle=init_pos,wait=True,is_radian=False)
-            time.sleep(0.5)
-            _,init_pose = self.arm.get_position(is_radian=True)
-            self.init_pose = np.array(init_pose,dtype=np.float32)
-            # print(init_pose)
-            # init_poseSAd = self.arm.get_inverse_kinematics(init_pose, input_is_radian=True, return_is_radian=False)
-            # print("init_poseSAd", init_poseSAd)
-            self.detect_xyz = ([init_pose[0],init_pose[1],init_pose[2]])
-            self.detect_rpy = ([init_pose[3],init_pose[4],init_pose[5]])
-            # go back to stow position after inital setup/check arm
-            self.arm.set_servo_angle(angle=[0,90,0,0,0,0],wait=True,is_radian=False)
-            time.sleep(0.5)
-        
-        #         # self.arm.set_state(0)
-        # # _, init_pos = tuple(self.arm.get_initial_point())
-        # self.init_j_pose = [0,90,0,0,0,0]
-
-        # # self.arm.set_servo_angle(angle=init_pos,wait=True,is_radian=False)
-        # # time.sleep(0.5)
-        # init_pose = [325.582489, 0.784381, 84.320984,3.132834, -0.603844, 0.014477]
-        # # _,init_pose = self.arm.get_position(is_radian=True)
-        # self.init_pose = np.array(init_pose,dtype=np.float32)
-        # # print(init_pose)
-        # # init_poseSAd = self.arm.get_inverse_kinematics(init_pose, input_is_radian=True, return_is_radian=False)
-        # # print("init_poseSAd", init_poseSAd)
-        # self.detect_xyz = ([init_pose[0],init_pose[1],init_pose[2]])
-        # self.detect_rpy = ([init_pose[3],init_pose[4],init_pose[5]])
-        # # print( self.detect_xyz)
-        
-        # print( self.detect_xyz)
-        # print( self.detect_rpy)
-        
         self.arm.set_gripper_enable(True)
         self.arm.set_gripper_position(850)
         time.sleep(0.5)
+        if self.init_j_pose is None:
+            # go to initial position
+            _, init_pos = tuple(self.arm.get_initial_point())
+            self.init_j_pose = init_pos
+
+        self.arm.set_servo_angle(angle=self.init_j_pose,wait=True,is_radian=False)
+
+    def update_pos_loop(self):
+        self.xarm_init()
+        if self.init_pose is None:
+            self.arm.set_servo_angle(angle=self.init_j_pose,wait=True,is_radian=False)
+            time.sleep(0.5)
+            _,init_pose = self.arm.get_position(is_radian=True)
+            self.init_pose = np.array(init_pose,dtype=np.float32)
+            self.detect_xyz = ([init_pose[0],init_pose[1],init_pose[2]])
+            self.detect_rpy = ([init_pose[3],init_pose[4],init_pose[5]])
+
+            if self.on_trigger_mode:
+                # go back to stow position after inital setup/check arm
+                self.arm.set_servo_angle(angle=[0,90,0,0,0,0],wait=True,is_radian=False)        
+                time.sleep(0.5)
 
         self.SERVO = True
 
@@ -237,12 +223,15 @@ class RobotGrasp(object):
             self.arm.get_err_warn_code()
             self.CURR_POS = [pos[0], pos[1], pos[2], pos[3], pos[4], pos[5]]
             time.sleep(0.01)
-        self.alive = False
+        while self.arm.error_code == 31: # error via collision
+            print('Collision detected, resetting arm')
+            self.xarm_init()
+            time.sleep(5)
         if self.arm.error_code != 0:
             print('ERROR_CODE: {}'.format(self.arm.error_code))
             print('*************** PROGRAM OVER *******************')
-    
-        self.arm.disconnect()
+            self.alive = False
+            self.arm.disconnect()
     
     def check_loop(self):
         while self.arm.connected and self.arm.error_code == 0:
@@ -314,14 +303,21 @@ class RobotGrasp(object):
             return
 
         d = list(data)
-
-        # PBVS Method.
-        euler_base_to_eef = self.get_eef_pose_m()
+        # print("length of data sent: ", len(d))
+        if len(d) <= 6: # 7th element is the eef pose
+            # PBVS Method.
+            print("getting pose after grasp img is calculated")
+            euler_base_to_eef = self.get_eef_pose_m()
+            print("grasp data eef: ", euler_base_to_eef)
+        else:
+            # print("grasp data eef: ", d)
+            euler_base_to_eef = d[6]
+            print("grasp data eef 6: ", euler_base_to_eef)
         # print(d)
         # print([d[0], d[1], d[2], 0, 0, -d[3]])
         # if d[2] > 0.35:  # Min effective range of the oakdpro.
         if d[2] > 0.2:  # Min effective range of the realsense.
-            gp = [d[0], d[1], d[2], 0, 0, -d[3]] # xyzrpy in meter
+            gp = [d[0], d[1], d[2], 0, 0, -d[3]] # xyz00(angle of grasp) in meter
             # print("gp", gp)
             # Calculate Pose of Grasp in Robot Base Link Frame
             # Average over a few predicted poses to help combat noise.
@@ -350,9 +346,9 @@ class RobotGrasp(object):
 
         # Average pose in base frame.
         ang = av[3] - np.pi/2  # We don't want to align, we want to grip.
-        gp_base = [av[0], av[0], av[0], np.pi, 0, ang]
+        gp_base = [av[0], av[1], av[2], np.pi, 0, ang]
         GOAL_POS = [av[0] * 1000, av[1] * 1000, av[2] * 1000 + self.gripper_z_mm, 180, 0, math.degrees(ang + np.pi)]
-        # print("GOAL_POS", GOAL_POS)
+        print("GOAL_POS", GOAL_POS)
         if abs(GOAL_POS[2]) < self.gripper_z_mm + 10:
             # print('[IG]', GOAL_POS)
             return
@@ -380,7 +376,9 @@ class RobotGrasp(object):
             if GOAL_POS[0] != self.release_xyz[0]:
                 ang_bin = (abs(self.GOAL_POS[3] - self.CURR_POS[3]) > 5) and (abs(self.GOAL_POS[4] - self.CURR_POS[4])  > 5) and (abs(self.GOAL_POS[5] - self.CURR_POS[5]) > 5) # deg
                 xy_bin = abs(self.GOAL_POS[0] - self.CURR_POS[0]) > 5 and abs(self.GOAL_POS[1] - self.CURR_POS[1]) > 5 # mm
-                if xy_bin and ang_bin:
+                # print("xy_bin", xy_bin)
+                # print("ang_bin", ang_bin)
+                if xy_bin or ang_bin:
                     self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.CURR_POS[2],
                                         roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
                                         speed=50, mvacc=1000, wait=False)
