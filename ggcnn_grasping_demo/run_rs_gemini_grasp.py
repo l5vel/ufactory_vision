@@ -45,14 +45,13 @@ GRASPING_MIN_Z = 440
 
 GRIPPER_Z_MM = 35  # mm - accounting for the shifted camera
 # Camera calibration result
-# EULER_EEF_TO_COLOR_OPT = [-0.162, 0.015, 
+EULER_EEF_TO_COLOR_OPT = [-0.12, 0.015, 
+                          0.1082,    
+                           0, math.radians(0),0]  # xyzrpy meters_rad - new tilted mount
+# EULER_EEF_TO_COLOR_OPT = [-0.14, 0.015, 
 #                         #   0.1082,
 #                            0.06,          
-#                            0, math.radians(0),0]  # xyzrpy meters_rad - new tilted mount
-EULER_EEF_TO_COLOR_OPT = [-0.14, 0.015, 
-                        #   0.1082,
-                           0.06,          
-                           0, math.radians(0),0]  # xyzrpy meters_rad - new tilted mount
+#                            0, math.radians(0),0]  # xyzrpy meters_rad - flat mount
 # EULER_EEF_TO_COLOR_OPT = [0,0,0,0,0,0]
 EULER_COLOR_TO_DEPTH_OPT = [0, 0, 0, 0, 0, 0]
 
@@ -62,6 +61,7 @@ ARM_IP = '172.16.0.13'
 
 HORI_PICKUP_BOOL = True
 GGCNN_CUTOFF_DIST = 0.4 # distance from object at which the ggcnn will be stopped
+ARMCTRL_MAX_DIST = 1.5 # max distance up to which arm control is triggered
 
 class GeminiGGCNNGrasp:
     """
@@ -134,7 +134,8 @@ class GeminiGGCNNGrasp:
                 RELEASE_XYZ, 
                 GRASPING_MIN_Z,
                 hori_pickup=HORI_PICKUP_BOOL,
-                cutoff_dist=GGCNN_CUTOFF_DIST
+                cutoff_dist=GGCNN_CUTOFF_DIST, 
+                max_allowable_dist=ARMCTRL_MAX_DIST
             )
             
             # Initialize Gemini object detector

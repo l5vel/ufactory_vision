@@ -93,7 +93,7 @@ class RobotGrasp(object):
     SERVO = True
     GRASP_STATUS = 0
 
-    def __init__(self, robot_ip, ggcnn_cmd_que, euler_eef_to_color_opt, euler_color_to_depth_opt, grasping_range, detect_xyz, gripper_z_mm, release_xyz, grasping_min_z, use_init_pos = False, stop_arm_on_success = False, on_trigger_mode = False, hori_pickup=False, cutoff_dist=0.3):
+    def __init__(self, robot_ip, ggcnn_cmd_que, euler_eef_to_color_opt, euler_color_to_depth_opt, grasping_range, detect_xyz, gripper_z_mm, release_xyz, grasping_min_z, use_init_pos = False, stop_arm_on_success = False, on_trigger_mode = False, hori_pickup=False, cutoff_dist=0.3, max_allowable_dist = 2): # dist in m
         self.arm = XArmAPI(robot_ip)
         self.ggcnn_cmd_que = ggcnn_cmd_que
         self.euler_eef_to_color_opt = euler_eef_to_color_opt
@@ -134,6 +134,7 @@ class RobotGrasp(object):
         self.xy_ctrl = True
         self.roll_ctrl = False
         self.ggcnn_cutoff_dist = cutoff_dist
+        self.max_arm_ctrl_dist = max_allowable_dist
 
     def is_alive(self):
         return self.alive
@@ -524,13 +525,15 @@ class RobotGrasp(object):
         print("d_raw: ", d) # ang in radians
         # print([d[0], d[1], d[2], 0, 0, -d[3]])
         # if d[2] > 0.35:  # Min effective range of the oakdpro.
-        if d[2] > self.ggcnn_cutoff_dist and self.dist_valid:  # Min effective range of the realsense.
+        print(math.cos(math.radians(15)))
+        # cut off detection loop for large or small values 
+        if d[2] > self.ggcnn_cutoff_dist and d[2] < self.max_arm_ctrl_dist and self.dist_valid:  # Min effective range of the realsense.
             if not self.hori_pickup:
                 gp = [d[0], d[1], d[2], 0, 0, -d[3]] # xyz00(angle of grasp) in meter
             else:
                 # Transform grasp point
                 
-                gp = [d[2], -d[1], -d[0], 0, 0, 0]  # For horizontal grasping
+                gp = [d[2]*math.cos(math.radians(15)), -d[1], -d[0]*math.cos(math.radians(15)), 0, 0, 0]  # For horizontal grasping
                 # gp = [d[2], -d[0], d[1], 0, 0, 0]  # For horizontal grasping
             
             print("gp", gp)
