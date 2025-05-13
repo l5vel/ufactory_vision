@@ -45,5 +45,7 @@ def mat2euler(mat4x4):
 # mat_of_source_in_tar_frame: source frame expressed in target frame
 def convert_pose(pose6d, mat_of_source_in_tar_frame):
     mat_in_source = euler2mat(pose6d)
+    # print("mat_in_source: ", mat_in_source)
     mat_in_tar = mat_of_source_in_tar_frame * mat_in_source
+    # print("gp_base_mat: ", mat_in_tar)
     return mat2euler(mat_in_tar)

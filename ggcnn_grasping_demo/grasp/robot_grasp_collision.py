@@ -513,6 +513,7 @@ class RobotGrasp(object):
         self.arm.set_gripper_position(-10, wait=True)
         time.sleep(0.5)
         # check if the grasp is empty or not
+        print("going home from after gripping")
         self.arm.set_servo_angle(angle=self.init_j_pose, speed=50, mvacc=1000, wait=True) # going to grasp position but in joint space to avoid IK errors
         if not(self.arm.get_gripper_position()[1]) < 0: # only go to recepticle if gripped something
             # Plan safe trajectory to the release position
@@ -531,6 +532,7 @@ class RobotGrasp(object):
         self.arm.set_gripper_position(850, wait=True)
         self.arm.set_mode(0)
         self.arm.set_state(0)
+        print("resetting from stop_motion")
         self.arm.set_servo_angle(angle=self.init_j_pose, speed=50, mvacc=1000, wait=True) # going to grasp position but in joint space to avoid IK errors
 
         self.pose_averager.reset()

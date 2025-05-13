@@ -143,6 +143,7 @@ class GeminiBbox:
                     visualization_image_np = np.array(visualization_image_pil)
                     cv2.imshow("Detected Objects", visualization_image_np)
                     cv2.waitKey(1)
+                    # time.sleep(30)
 
                 else:
                     print("Warning: Input 'image_pil' is not a PIL Image object.")

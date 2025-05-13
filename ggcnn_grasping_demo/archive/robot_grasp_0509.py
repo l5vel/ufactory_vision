@@ -93,7 +93,7 @@ class RobotGrasp(object):
     SERVO = True
     GRASP_STATUS = 0
 
-    def __init__(self, robot_ip, ggcnn_cmd_que, euler_eef_to_color_opt, euler_color_to_depth_opt, grasping_range, detect_xyz, gripper_z_mm, release_xyz, grasping_min_z, use_init_pos = False, stop_arm_on_success = False, on_trigger_mode = False, hori_pickup=False, cutoff_dist=0.3):
+    def __init__(self, robot_ip, ggcnn_cmd_que, euler_eef_to_color_opt, euler_color_to_depth_opt, grasping_range, detect_xyz, gripper_z_mm, release_xyz, grasping_min_z, use_init_pos = False, stop_arm_on_success = False, on_trigger_mode = False, hori_pickup=False):
         self.arm = XArmAPI(robot_ip)
         self.ggcnn_cmd_que = ggcnn_cmd_que
         self.euler_eef_to_color_opt = euler_eef_to_color_opt
@@ -113,7 +113,7 @@ class RobotGrasp(object):
         self.release_xyz = release_xyz
         self.grasping_min_z = grasping_min_z
         # self.pose_averager = Averager(4, 3)
-        self.pose_averager = MinPos(4, 2)
+        self.pose_averager = MinPos(4, 3)
         self.is_ready = False
         self.alive = True
         self.last_grasp_time = 0
@@ -128,21 +128,16 @@ class RobotGrasp(object):
         self.xarm_setup = True # tag to indicate if it is setup or reset for arm
         self.hori_pickup = hori_pickup # tag to indicate top-down pickup or horizontal pickup
         self.dist_valid = True # tag to stop looking for additional distance values when approaching 
-
-        # arm control tags - specifically used in horizontal gripping
-        # by default it is in 0 mode
-        self.xy_ctrl = True
-        self.roll_ctrl = False
-        self.ggcnn_cutoff_dist = cutoff_dist
-
+    
     def is_alive(self):
         return self.alive
     
     def handle_ggcnn_loop(self):
         while self.arm.connected and self.alive:
             cmd = self.ggcnn_cmd_que.get()
-            # print("cmd: ",cmd)
+            # print("cmd",cmd)
             self.grasp(cmd)
+            time.sleep(0.15)
 
     def stop_motion(self):
         if not self.SERVO:
@@ -158,7 +153,6 @@ class RobotGrasp(object):
         self.arm.set_gripper_position(-10, wait=True)
         time.sleep(0.5)
         # check if the grasp is empty or not
-        print("going to home after gripping from stop_motion")
         self.arm.set_servo_angle(angle=self.init_j_pose, speed=50, mvacc=1000, wait=True) # going to grasp position but in joint space to avoid IK errors
         if not(self.arm.get_gripper_position()[1]) < 0: # only go to recepticle if gripped something
             if self.stop_arm_on_success: # stop grasp code if enabled
@@ -175,17 +169,13 @@ class RobotGrasp(object):
 
         # Open Fingers
         self.arm.set_gripper_position(850, wait=True)
-        # lift z to large value to avoid any collisions
-        if self.hori_pickup:
-            self.arm.set_position(z=600, speed=100, wait=True)
         # time.sleep(5)
         self.arm.set_mode(0)
-        print("resetting from stop_motion")
+        self.arm.set_state(0)
         self.arm.set_servo_angle(angle=self.init_j_pose, speed=50, mvacc=1000, wait=True) # going to grasp position but in joint space to avoid IK errors
         self.dist_valid = True # reset this after grasping attempt
         self.pose_averager.reset()
         self.arm.set_mode(7)
-        self.xy_ctrl = True
         self.arm.set_state(0)
         time.sleep(2)
 
@@ -244,7 +234,6 @@ class RobotGrasp(object):
 
         self.SERVO = True
         self.arm.set_mode(7)
-        self.xy_ctrl = True
         self.arm.set_state(0)
         time.sleep(0.5)
 
@@ -261,9 +250,7 @@ class RobotGrasp(object):
                     _, pos = self.arm.get_position()
                     # warn_code = self.arm.get_err_warn_code()
                     # print("Error/warn code: ", warn_code)
-                    pos = [round(val,3) for val in pos]
                     self.CURR_POS = [pos[0], pos[1], pos[2], pos[3], pos[4], pos[5]]
-                    # print("In err code, self.CURR_POS: ", self.CURR_POS)
                 except Exception as e:
                     print("Exception getting position:", str(e))
                     
@@ -281,7 +268,6 @@ class RobotGrasp(object):
                 if self.arm.error_code == 0:
                     # print("Successfully reset arm, returning to servo mode")
                     self.arm.set_mode(7)
-                    self.xy_ctrl = True
                     self.arm.set_state(0)
                     time.sleep(0.5)
                 
@@ -301,7 +287,6 @@ class RobotGrasp(object):
                 if self.arm.error_code == 0:
                     # print("Successfully reset arm, returning to servo mode")
                     self.arm.set_mode(7)
-                    self.xy_ctrl = True
                     self.arm.set_state(0)
                     time.sleep(0.5)
                 
@@ -321,7 +306,6 @@ class RobotGrasp(object):
                 if self.arm.error_code == 0:
                     # print("Successfully reset arm, returning to servo mode")
                     self.arm.set_mode(7)
-                    self.xy_ctrl = True
                     self.arm.set_state(0)
                     time.sleep(0.5)
                 
@@ -346,7 +330,6 @@ class RobotGrasp(object):
                 if self.arm.error_code == 0:
                     print("Successfully recovered, returning to servo mode")
                     self.arm.set_mode(7)
-                    self.xy_ctrl = True
                     self.arm.set_state(0)
                     time.sleep(0.5)
                 else:
@@ -359,9 +342,9 @@ class RobotGrasp(object):
                         time.sleep(1)
                         self.arm.motion_enable(True)
                         self.arm.set_mode(0)
+                        self.arm.set_state(0)
                         time.sleep(1)
                         self.arm.set_mode(7)
-                        self.xy_ctrl = True
                         self.arm.set_state(0)
                     else:
                         # Unrecoverable error
@@ -411,12 +394,11 @@ class RobotGrasp(object):
                             abs(y-self.detect_xyz[1]) < 2 and 
                             abs(z-self.detect_xyz[2]) < 2)
         
+        # print("outside_boundary: ", outside_boundary)
+        # print("timeout_occurred: ", timeout_occurred)
+        # print("at_detect_pos: ", at_detect_pos)
         # reset to start position if moved outside of boundary or grasping timed out
-        if outside_boundary or timeout_occurred:
-            print("outside_boundary: ", outside_boundary)
-            print("timeout_occurred: ", timeout_occurred)
-            print("at_detect_pos: ", at_detect_pos)
-        
+        if outside_boundary or (timeout_occurred and at_detect_pos):
             print("restart triggered current state: ", x,y,z,roll,pitch,yaw)
             self.SERVO = False
             self.arm.set_state(4)
@@ -424,18 +406,15 @@ class RobotGrasp(object):
             self.arm.set_state(0)
             time.sleep(1)
             # going to grasp position but in joint space to avoid IK errors
-            print("going home beacuse of boundary/timeout")
             self.arm.set_servo_angle(angle=self.init_j_pose, speed=50, mvacc=1000, wait=True)
             time.sleep(0.25)
             self.pose_averager.reset()
             self.arm.set_mode(7)
-            self.xy_ctrl = True
             self.arm.set_state(0)
             time.sleep(0.5)
             self.GRASP_STATUS = 0
             self.SERVO = True
             self.last_grasp_time = time.monotonic()
-            self.dist_valid = True
             return
             
         # Update the timer if timeout occurred but we didn't reset
@@ -450,7 +429,7 @@ class RobotGrasp(object):
         # print("x_diff_abs: ", x_diff_abs)
         # print("y_diff_abs: ", y_diff_abs)
         # print("z_diff_abs: ", z_diff_abs)
-        if x_diff_abs < 3 and y_diff_abs < 3:
+        if x_diff_abs < 5 and y_diff_abs < 5:
                 self.GRASP_STATUS = 1
         if not self.hori_pickup: # only relevant for veritical pickup to avoid collision with surface
             # stop if current z is less than threshold
@@ -467,7 +446,7 @@ class RobotGrasp(object):
         eef_pos_m = [eef_pos_mm[0]*0.001, eef_pos_mm[1]*0.001, eef_pos_mm[2]*0.001, eef_pos_mm[3], eef_pos_mm[4], eef_pos_mm[5]]
         return eef_pos_m
 
-    def wrap90_closest0(self, angle):
+    def warp90_closest0(self, angle):
         """
         Convert an angle to the representation in [-90, 90] that is closest to zero.
         
@@ -500,74 +479,45 @@ class RobotGrasp(object):
         return closest_angle
 
     def grasp(self, data):
-        # print("data: ", data)
-        # print("Checking conditions:")  # Add this line
-        # print(f"self.alive: {self.alive}")  # Add this line
-        # print(f"self.is_ready: {self.is_ready}")  # Add this line
-        # print(f"self.SERVO: {self.SERVO}")  # Add this line
-
         if not self.alive or not self.is_ready or not self.SERVO:
-            # print("data in condition: ",data)
             return
 
         d = list(data)
-
+        # print("length of data sent: ", len(d))
         if len(d) <= 6: # 7th element is the eef pose
             # PBVS Method.
-            print("getting pose after grasp img is calculated")
+            # print("getting pose after grasp img is calculated")
             euler_base_to_eef = self.get_eef_pose_m()
             # print("grasp data eef: ", euler_base_to_eef)
         else:
             # print("grasp data eef: ", d)
             euler_base_to_eef = d[6]
-            # print("grasp data eef 6: ", euler_base_to_eef)
-        print("d_raw: ", d) # ang in radians
+            print("grasp data eef 6: ", euler_base_to_eef)
+        # print("d_raw: ", d) # ang in radians
         # print([d[0], d[1], d[2], 0, 0, -d[3]])
         # if d[2] > 0.35:  # Min effective range of the oakdpro.
-        if d[2] > self.ggcnn_cutoff_dist and self.dist_valid:  # Min effective range of the realsense.
+        if d[2] > 0.2 and self.dist_valid:  # Min effective range of the realsense.
             if not self.hori_pickup:
                 gp = [d[0], d[1], d[2], 0, 0, -d[3]] # xyz00(angle of grasp) in meter
             else:
                 # Transform grasp point
-                
-                gp = [d[2], -d[1], -d[0], 0, 0, 0]  # For horizontal grasping
-                # gp = [d[2], -d[0], d[1], 0, 0, 0]  # For horizontal grasping
+                gp = [d[0], d[1], d[2], d[3], 0, 0]  # For horizontal grasping
             
-            print("gp", gp)
+            # print("gp", gp)
             # Calculate Pose of Grasp in Robot Base Link Frame
             # Average over a few predicted poses to help combat noise.
             # print("gp", gp)
-            e2mat1 = euler2mat(euler_base_to_eef)
-            e2mat2 = euler2mat(self.euler_eef_to_color_opt) 
-
             mat_depthOpt_in_base = euler2mat(euler_base_to_eef) * euler2mat(self.euler_eef_to_color_opt) * euler2mat(self.euler_color_to_depth_opt)
-            
-            print("euler_base_to_eef matrix:", euler2mat(euler_base_to_eef))
-            print("euler_eef_to_color_opt matrix:", euler2mat(self.euler_eef_to_color_opt))
-            # print("euler_color_to_depth_opt matrix:", euler2mat(self.euler_color_to_depth_opt))
-            print("Combined matrix:", mat_depthOpt_in_base)
-
+            # print(euler2mat(self.euler_eef_to_color_opt))
+            # print(mat_depthOpt_in_base)
+            # print("euler frame", rot_to_rpy(mat_depthOpt_in_base[0:3,0:3]))
             gp_base = convert_pose(gp, mat_depthOpt_in_base)
-            print("gp_base regular: ", gp_base)
-
-            gp_base = np.zeros(6)
-            # Add the arrays
-            # e2mat2_2 =  np.array(e2mat2)
-            # print(e2mat2_2[3][2])
-            # e2mat2_2[3][2] = d[2]*math.sin(math.radians(15))
-            # print(e2mat2_2)
-            gp_base[0:3] = e2mat1[0:3, 3].flatten() + e2mat2[0:3, 3].flatten() + np.array(gp[:3])  
-            # gp_base = np.concatenate([gp_base, np.array([0, 0, 0])])
-
-            print("gp_base_add: ", gp_base)
-
-            gp_base[3] = d[3]
+            
             if not self.hori_pickup:
                 if gp_base[5] < -np.pi:
                     gp_base[5] += np.pi
                 elif gp_base[5] > np.pi:
                     gp_base[5] -= np.pi
-                
                 av = self.pose_averager.update(np.array([gp_base[0], gp_base[1], gp_base[2], gp_base[5]]))
             else:
                 # print("Original angle: ", math.degrees(gp_base[3]))
@@ -579,33 +529,62 @@ class RobotGrasp(object):
                 # elif gp_base[3] > np.pi/2:
                 #     gp_base[3] = np.pi/2
                 # print("Final normalized angle: ", math.degrees(gp_base[3]))
-
-                # print("Updating pose_averager with:", [gp_base[0], gp_base[1], gp_base[2], gp_base[3]])
-                # old_av = self.pose_averager.evaluate() if hasattr(self.pose_averager, 'evaluate') else None
-                # print("Pose averager before update:", old_av)
                 av = self.pose_averager.update(np.array([gp_base[0], gp_base[1], gp_base[2], gp_base[3]]))
         else:
             self.dist_valid = False # stop reading from the camera
             # gp_base = geometry_msgs.msg.Pose()
             gp_base = [0]*6
             av = self.pose_averager.evaluate()
-            print("av during bad distance: ", av)
-            
-        # print("Pose averager after update:", av)
         # print("av: ", av)
+        # Average pose in base frame.
+        # print("Current Yaw: ", self.CURR_POS[5])
+        # print("ang init: ", math.degrees(av[3]))
+        
+        # if not self.hori_pickup:
+        #     ang = av[3] - np.pi/2  # We don't want to align, we want to grip.
+        # else:
+        #     ang = av[3]  # We don't want to align, we want to grip.
+        # print("ang after pi/2: ", math.degrees(ang))
+        # # Normalize the angle to avoid full rotations
+        # while ang < -np.pi:
+        #     ang += 2*np.pi
+        # while ang > np.pi:
+        #     ang -= 2*np.pi
+        # # print("normalized ang: ", math.degrees(ang))
+        # # calculate the point with the least differece
 
-        av = [round(num,6) for num in av] # av is in m
-        print("av: ", av)
+        # if not self.hori_pickup:
+        #     ang = ang + np.pi
+        #     while ang < -np.pi:
+        #         ang += 2*np.pi
+        #     while ang > np.pi:
+        #         ang -= 2*np.pi
+        #     print("ang after +pi: ", math.degrees(ang))
+        # if not self.hori_pickup: # add offset to the x or z dimension for improved grip
+        #     GOAL_POS = [av[0] * 1000, av[1] * 1000, av[2] * 1000 + self.gripper_z_mm, self.CURR_POS[3], self.CURR_POS[4], math.degrees(ang)]
+        #     if abs(GOAL_POS[2]) < self.gripper_z_mm + 10:
+        #         # print('[IG]', GOAL_POS)
+        #         return
+        # else:
+        #     GOAL_POS = [av[0] * 1000 + self.gripper_z_mm, av[1] * 1000, av[2] * 1000,  math.degrees(ang), self.CURR_POS[4], self.CURR_POS[5]]
+        # print("GOAL_POS", GOAL_POS)
+        # print(GOAL_POS[2])
+        # GOAL_POS[2] = min(abs(euler_base_to_eef[2]-d[2]), euler_base_to_eef[2]) # forced to only pick up from table
+        # GOAL_POS[2] = GOAL_POS[2]*1000
+        # print(GOAL_POS)
+        # Get current angle of the robot (in degrees)
+
+        print("CUR_POS", self.CURR_POS)
         # Process initial angle based on pickup type
+        # if not self.hori_pickup:
+        #     ang = av[3] - np.pi/2
+        # else:
+        #     ang = av[3] 
+        
         ang = av[3] - np.pi/2
 
         # Get current angle of the robot (in radians)
-        if not self.hori_pickup:
-            current_angle_rad = math.radians(self.CURR_POS[5])
-        else: # use only final axes motion for hori pickup
-            _, cur_j_pos = self.arm.get_servo_angle(is_radian=False)
-            current_angle_rad = math.radians(cur_j_pos[5])
-        
+        current_angle_rad = math.radians(self.CURR_POS[5]) if not self.hori_pickup else math.radians(self.CURR_POS[3])
         # print("Current angle (radians): ", current_angle_rad)
         # print("Current angle (degrees): ", self.CURR_POS[5] if not self.hori_pickup else self.CURR_POS[3])
 
@@ -621,89 +600,85 @@ class RobotGrasp(object):
         # print("Normalized angle (radians): ", ang)
         # print("Normalized angle (degrees): ", math.degrees(ang))
 
-        # Get representation closest to zero
-        zero_closest_ang_deg = self.wrap90_closest0(math.degrees(ang))
-        
-        # Now find the best representation for minimal robot movement
-        # Create options that are equivalent to zero-closest representation
-        options = []
-        for offset in range(-4, 5):
-            temp = zero_closest_ang_deg + offset * 180  # Only need to check 180° offsets now
-            temp_rad = math.radians(temp)
-            
-            # Calculate rotation distance, handle wrap-around
-            dist = abs(temp_rad - current_angle_rad)
-            if dist > np.pi:
-                dist = 2*np.pi - dist
-                
-            options.append((temp_rad, dist))
+        # Create another angle option (original angle + 180°)
+        ang_alt = ang + np.pi
+        # Normalize alternative angle
+        while ang_alt < -np.pi:
+            ang_alt += 2*np.pi
+        while ang_alt > np.pi:
+            ang_alt -= 2*np.pi
 
-        # Sort by distance and pick the closest one
-        options.sort(key=lambda x: x[1])
-        final_ang = options[0][0]
+        # Calculate rotation distances for both angles
+        dist_orig = abs(ang - current_angle_rad)
+        dist_alt = abs(ang_alt - current_angle_rad)
+
+        # Handle wrap-around cases
+        if dist_orig > np.pi:
+            dist_orig = 2*np.pi - dist_orig
+        if dist_alt > np.pi:
+            dist_alt = 2*np.pi - dist_alt
+
+        # print("org ang, Distance to original angle: ", math.degrees(ang), math.degrees(dist_orig))
+        # print("alt angle, Distance to +180° angle: ", math.degrees(ang_alt), math.degrees(dist_alt))
+
+        # Choose angle with smallest rotation
+        if abs(dist_orig) <= abs(dist_alt):
+            final_ang = ang
+        else:
+            final_ang = ang_alt
+
+        # print("Final angle (radians): ", final_ang)
+        # print("Final angle (degrees): ", math.degrees(final_ang))
 
         # Set goal position based on pickup orientation
         if not self.hori_pickup:  # add offset to z dimension for vertical pickup
-            GOAL_POS = [av[0] * 1000, 
-                        av[1] * 1000, 
-                        av[2] * 1000 + self.gripper_z_mm,
-                        180, 0, math.degrees(final_ang)]
+            # GOAL_POS = [av[0] * 1000, av[1] * 1000, av[2] * 1000 + self.gripper_z_mm, 
+            #         self.CURR_POS[3], self.CURR_POS[4], math.degrees(final_ang)]
+            GOAL_POS = [av[0] * 1000, av[1] * 1000, av[2] * 1000 + self.gripper_z_mm, 
+                   180, 0, math.degrees(final_ang)]
             if abs(GOAL_POS[2]) < self.gripper_z_mm + 10:
+                # print('[IG]', GOAL_POS)
                 return
         else:  # add offset to x dimension for horizontal pickup
+            
             # Calculate the desired roll angle
             desired_roll = final_ang
-            initial_roll = math.radians(self.init_j_pose[3]) # Starting j6 angle
-
-            current_roll = current_angle_rad
-            # print("desired_roll: ", desired_roll)
-            # print("initial_roll: ", initial_roll)
-            # Calculate the angular difference, accounting for wrap-around
-            # This gives us the smallest angle between the two positions, regardless of direction
-            angle_diff = math.atan2(math.sin(desired_roll - current_roll), 
-                                math.cos(desired_roll - current_roll))
-                                
-            # print(f"Smallest angle difference: {math.degrees(angle_diff):.1f} degrees")
-
-            # Choose the angle that requires the smallest movement
-            final_roll = current_roll + angle_diff
-
-            # Check if the movement is within allowed limits from initial position
-            total_deviation = math.atan2(math.sin(final_roll - initial_roll),
-                                    math.cos(final_roll - initial_roll))
-
-            # Limit maximum deviation from initial position if needed
-            max_allowed_deviation = math.radians(90)  # 90 degrees in radians
-            if abs(total_deviation) > max_allowed_deviation:
-                # Limit the deviation to max_allowed_deviation in the appropriate direction
-                final_roll = initial_roll + math.copysign(max_allowed_deviation, total_deviation)
             
-            final_roll = math.degrees(final_roll)
-            # print(f"final_roll (deg): {final_roll:.1f}")
+            initial_roll = self.init_pose[3]  # Starting position roll
+    
+            # Calculate the angular difference from initial position, accounting for wrap-around
+            roll_difference = np.arctan2(np.sin(desired_roll - initial_roll), 
+                                    np.cos(desired_roll - initial_roll))
             
-            roll_diff = round(abs(math.degrees(current_roll) - final_roll),3) # j6 travel desired
+            # print(f"roll_difference from initial: {math.degrees(roll_difference):.1f} degrees")
+            
+            # Only change the roll if it's within a reasonable range from initial (e.g., 30 degrees)
+            if abs(roll_difference) < math.radians(90):
+                final_roll = desired_roll
+            else:
+                # Limit the change to 30 degrees in the direction of the desired roll from initial
+                final_roll = initial_roll + math.copysign(math.radians(90), roll_difference)
+            
+            # print(f"final_roll: {math.degrees(final_roll):.1f} degrees")
             
             # Create offset vector in the direction of the grasp
-            offset_x = round(self.gripper_z_mm * math.cos(self.CURR_POS[5]),3)
-            offset_y = round(self.gripper_z_mm * math.sin(self.CURR_POS[5]),3)
-            # print("offset_x: ", offset_x)
-            # print("offset_y: ", offset_y)
+            offset_x = self.gripper_z_mm * math.cos(self.CURR_POS[5])
+            offset_y = self.gripper_z_mm * math.sin(self.CURR_POS[5])
+            
             # Apply the offset to the position
             GOAL_POS = [
-                # av[0] * 1000 + offset_x,  # X with directional offset
-                # av[1] * 1000 + offset_y,  # Y with directional offset
-                av[0] * 1000 + self.gripper_z_mm,  # X with directional offset
-                av[1] * 1000,  # Y with directional offset
+                av[0] * 1000 + offset_x,  # X with directional offset
+                av[1] * 1000 + offset_y,  # Y with directional offset
                 av[2] * 1000,             # Z unchanged
                 # math.degrees(final_roll),  # Roll angle
                 self.CURR_POS[3],
                 self.CURR_POS[4],         # Pitch unchanged
                 self.CURR_POS[5]          # Yaw unchanged
             ]
-        # always keep arm above/at min range
-        GOAL_POS[0] = max(self.grasping_range[0], GOAL_POS[0])
-        GOAL_POS[1] = max(self.grasping_range[2], GOAL_POS[1])
-        GOAL_POS[2] = max(self.grasping_min_z, GOAL_POS[2])
+
+        GOAL_POS[0] = np.clip(self.grasping_range[0], self.grasping_range[1], GOAL_POS[0])
+        GOAL_POS[1] = np.clip(self.grasping_range[2], self.grasping_range[3], GOAL_POS[1])
+        GOAL_POS[2] = max(GOAL_POS[2],self.grasping_min_z)
         self.last_grasp_time = time.monotonic()
         print("Before control loop")
         print("GOAL_POS", GOAL_POS)
@@ -720,12 +695,10 @@ class RobotGrasp(object):
                 # self.arm.set_state(0)
                 # self.arm.set_servo_angle(angle=GOAL_POS_J, speed=25, mvacc=1000, wait=False) 
                 # align the robot before approaching in z
-
                 if GOAL_POS[0] != self.release_xyz[0]:
-                    # xy_bin = abs(self.GOAL_POS[0] - self.CURR_POS[0]) > 20 or abs(self.GOAL_POS[1] - self.CURR_POS[1]) > 20 # mm
-                    y_bin = abs(self.GOAL_POS[1] - self.CURR_POS[1]) > 5
+                    xy_bin = abs(self.GOAL_POS[0] - self.CURR_POS[0]) > 20 or abs(self.GOAL_POS[1] - self.CURR_POS[1]) > 20 # mm
                     # print("xy_bin", xy_bin)
-                    # ang_bin = (abs(self.GOAL_POS[3] - self.CURR_POS[3]) > 5) or (abs(self.GOAL_POS[4] - self.CURR_POS[4])  > 5) or (abs(self.GOAL_POS[5] - self.CURR_POS[5]) > 5) # deg
+                    ang_bin = (abs(self.GOAL_POS[3] - self.CURR_POS[3]) > 5) or (abs(self.GOAL_POS[4] - self.CURR_POS[4])  > 5) or (abs(self.GOAL_POS[5] - self.CURR_POS[5]) > 5) # deg
                     # print("ang_bin", ang_bin)
                     # print(self.CURR_POS)
                     # print(self.GOAL_POS)
@@ -734,31 +707,23 @@ class RobotGrasp(object):
                             self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = (-self.CURR_POS[2]+self.GOAL_POS[2])*0.5+self.CURR_POS[2],
                                                 roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
                                                 speed=75, mvacc=750, wait=False)
-                    else: # adjust angle first and approach after
-                        # print("current_roll, desired_roll, roll_diff ", math.degrees(current_roll), final_roll, roll_diff)
-                        roll_tol = 50000 # degrees
-                        # change modes only once
-                        if abs(roll_diff) > roll_tol:
-                            if self.xy_ctrl:
-                                self.roll_ctrl = True
-                                self.xy_ctrl = False
-                                # continue to change mode until success
-                                # self.arm.set_state(3) # pause motion while changing j6
-                                mode_change_bool = 1
-                                while mode_change_bool != 0:
-                                    mode_change_bool = self.arm.set_mode(1)
-                                time.sleep(1)
-                                self.arm.set_state(0)
-                        else:
-                            self.xy_ctrl = True
-                            if self.roll_ctrl:
-                                self.arm.set_mode(7)
-                                time.sleep(0.5)
-                                self.arm.set_state(0)
-                                self.roll_ctrl = False
+                    else: # adjust distance first and angle after
+                        xy_bin = 0
+                        _, cur_pos = self.arm.get_servo_angle(is_radian=False)
+                        # print("cur_pos: ", cur_pos)
+                        # print("desired_roll: ", math.degrees(desired_roll))
+                        cur_ang_diff = math.degrees(final_roll) - cur_pos[5]
+                        # print("cur_ang_diff before wrap: ", cur_ang_diff)
+                        # cur_ang_diff = ((cur_ang_diff + 90) % 180 + 180) % 180 - 90 # wrap aronund +-pi/2
+                        
+                        cur_ang_diff = self.warp90_closest0(cur_ang_diff)
 
-                        if abs(roll_diff) > roll_tol:
-                            print("aligning j6")
+                        # print("cur_ang_diff: ", cur_ang_diff)
+                        
+                        ang_bin = abs(cur_ang_diff) > 2 # this is the only time, roll is adjusted
+
+                        # return
+                        if ang_bin:
                             # self.arm.set_position(z=self.GOAL_POS[2], y = (-self.CURR_POS[1]+self.GOAL_POS[1])*0.75+self.CURR_POS[1], 
                             #                     x = (-self.CURR_POS[0]+self.GOAL_POS[0])*0.75+self.CURR_POS[0],
                             #                     roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
@@ -768,28 +733,19 @@ class RobotGrasp(object):
                             #                     x = self.CURR_POS[0],
                             #                     roll=self.GOAL_POS[3], pitch=self.CURR_POS[4], yaw=self.CURR_POS[5], 
                             #                     speed=75, mvacc=750, wait=False)
-                            _, curr_j_pos = self.arm.get_servo_angle(is_radian=False)
-                            goal_pos = curr_j_pos
-                            goal_pos[5] = final_roll 
-                            # print("CUR_POS", self.CURR_POS)
-                            # print("curr_j_pos: ", curr_j_pos)
-                            # print("goal_pos: ", goal_pos)
-
-                            self.arm.set_servo_angle_j(angles=goal_pos, speed=50, mvacc=1000, wait=True)
-                            # self.arm.set_servo_angle(angle=goal_pos, speed=50, mvacc=1000, wait=True)
+                            self.arm.set_mode(0)
+                            self.arm.set_state(0)
                             
-                            # print("angle alignment executing....") 
+                            goal_pos = cur_pos
+                            goal_pos[5] = cur_pos[5] + cur_ang_diff # difference in roll
+                            print("goal_pos: ", goal_pos)
+                            self.arm.set_servo_angle(angle=goal_pos, speed=50, mvacc=1000, wait=True) 
                         else:
                             print("After angle alignment, during control loop")
                             print("GOAL_POS", GOAL_POS)
                             print("CUR_POS", self.CURR_POS)
-                            # align y first and then go to x
-                            if y_bin:
-                                self.arm.set_position(x=self.CURR_POS[0], y=self.GOAL_POS[1], z = self.GOAL_POS[2],
-                                                roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
-                                                speed=75, mvacc=750, wait=False)
-                            else:
-                                self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.GOAL_POS[2],
+                            
+                            self.arm.set_position(x=self.GOAL_POS[0], y=self.GOAL_POS[1], z = self.GOAL_POS[2],
                                                 roll=self.GOAL_POS[3], pitch=self.GOAL_POS[4], yaw=self.GOAL_POS[5], 
                                                 speed=75, mvacc=750, wait=False)
 
