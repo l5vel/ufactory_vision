@@ -133,8 +133,9 @@ class RobotGrasp(object):
         # by default it is in 0 mode
         self.xy_ctrl = True
         self.roll_ctrl = False
-        self.ggcnn_cutoff_dist = cutoff_dist
+        self.ggcnn_cutoff_dist = cutoff_dist 
         self.max_arm_ctrl_dist = max_allowable_dist
+        self.release_trigger = False # tag to trigger coming up in z after release for safe return to init
 
     def is_alive(self):
         return self.alive
@@ -168,7 +169,8 @@ class RobotGrasp(object):
                 self.arm.set_state(0)
                 self.arm.set_servo_angle(angle=[0,90,0,0,0,0], speed=50, wait=True)
                 self.alive = False
-                return 
+                return
+            self.release_trigger = True # change tag to move the arm vertically after release 
             self.arm.set_position(x=self.release_xyz[0], y=self.release_xyz[1], roll=180, pitch=0, yaw=0, speed=200, wait=True)
             self.arm.set_position(z=self.release_xyz[2], speed=100, wait=True)
         # time.sleep(3)
@@ -177,8 +179,9 @@ class RobotGrasp(object):
         # Open Fingers
         self.arm.set_gripper_position(850, wait=True)
         # lift z to large value to avoid any collisions
-        if self.hori_pickup:
+        if self.hori_pickup and self.release_trigger:
             self.arm.set_position(z=600, speed=100, wait=True)
+            self.release_trigger = False
         # time.sleep(5)
         self.arm.set_mode(0)
         print("resetting from stop_motion")
@@ -512,7 +515,7 @@ class RobotGrasp(object):
             return
 
         d = list(data)
-
+        d[2] = round(d[2],3) # round the distance value
         if len(d) <= 6: # 7th element is the eef pose
             # PBVS Method.
             print("getting pose after grasp img is calculated")
@@ -522,19 +525,22 @@ class RobotGrasp(object):
             # print("grasp data eef: ", d)
             euler_base_to_eef = d[6]
             # print("grasp data eef 6: ", euler_base_to_eef)
-        print("d_raw: ", d) # ang in radians
+        if len(d) > 6:
+            print("d_raw: ", d[0:6]) # ang in radians
+        else:
+            print("d_raw: ", d) # ang in radians
         # print([d[0], d[1], d[2], 0, 0, -d[3]])
         # if d[2] > 0.35:  # Min effective range of the oakdpro.
-        print(math.cos(math.radians(15)))
         # cut off detection loop for large or small values 
         if d[2] > self.ggcnn_cutoff_dist and d[2] < self.max_arm_ctrl_dist and self.dist_valid:  # Min effective range of the realsense.
             if not self.hori_pickup:
                 gp = [d[0], d[1], d[2], 0, 0, -d[3]] # xyz00(angle of grasp) in meter
             else:
                 # Transform grasp point
+                # gp = [d[2]*math.cos(math.radians(15)), -d[1], -d[0]*math.cos(math.radians(15)), 0, 0, 0]  # For tilted mount
                 
-                gp = [d[2]*math.cos(math.radians(15)), -d[1], -d[0]*math.cos(math.radians(15)), 0, 0, 0]  # For horizontal grasping
-                # gp = [d[2], -d[0], d[1], 0, 0, 0]  # For horizontal grasping
+                gp = [d[2]*math.cos(math.radians(15)), -d[0], -d[2]*math.sin(math.radians(15)), 0, 0, 0]  # For tilted mount
+                # gp = [d[2], -d[0], d[1], 0, 0, 0]  # for flat mount
             
             print("gp", gp)
             # Calculate Pose of Grasp in Robot Base Link Frame
@@ -548,10 +554,10 @@ class RobotGrasp(object):
             print("euler_base_to_eef matrix:", euler2mat(euler_base_to_eef))
             print("euler_eef_to_color_opt matrix:", euler2mat(self.euler_eef_to_color_opt))
             # print("euler_color_to_depth_opt matrix:", euler2mat(self.euler_color_to_depth_opt))
-            print("Combined matrix:", mat_depthOpt_in_base)
+            # print("Combined matrix:", mat_depthOpt_in_base)
 
             gp_base = convert_pose(gp, mat_depthOpt_in_base)
-            print("gp_base regular: ", gp_base)
+            # print("gp_base regular: ", gp_base)
 
             gp_base = np.zeros(6)
             # Add the arrays
@@ -597,7 +603,7 @@ class RobotGrasp(object):
         # print("Pose averager after update:", av)
         # print("av: ", av)
 
-        av = [round(num,6) for num in av] # av is in m
+        av = [round(num,8) for num in av] # av is in m
         print("av: ", av)
         # Process initial angle based on pickup type
         ang = av[3] - np.pi/2
